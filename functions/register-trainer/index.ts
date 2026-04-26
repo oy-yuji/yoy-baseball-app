@@ -109,7 +109,15 @@ serve(async (req) => {
     })
     if (authError) {
       console.error('register-trainer: createUser failed', authError)
-      return makeResponse({ error: 'Failed to create auth user' }, 400, origin)
+      return makeResponse(
+        {
+          error: authError.message || 'Failed to create auth user',
+          code: (authError as any)?.code || null,
+          details: (authError as any)?.status || null
+        },
+        400,
+        origin
+      )
     }
     const newUserId = authUser.user?.id
     if (!newUserId) {

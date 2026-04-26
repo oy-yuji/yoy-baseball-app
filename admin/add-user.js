@@ -1,6 +1,7 @@
 // Show/hide extra fields based on role
 document.addEventListener('DOMContentLoaded', function() {
   var form = document.getElementById('registerForm');
+  if (!form) return;
   // Only run roleSelect logic if present (for add-user.html)
   var roleSelect = document.getElementById('roleSelect');
   var athleteFields = document.getElementById('athleteFields');
@@ -48,6 +49,15 @@ document.addEventListener('DOMContentLoaded', function() {
       var payload = {};
       formData.forEach((value, key) => { payload[key] = value; });
 
+      const isAthleteFlow = payload.role === 'athlete' || window.location.pathname.endsWith('add-athlete.html');
+      const entityLabel = isAthleteFlow ? 'Athlete' : 'Trainer';
+
+      // Basic client validation to avoid opaque createUser failures.
+      if (payload.password && String(payload.password).length < 6) {
+        showAlert(`${entityLabel} creation failed: Password must be at least 6 characters.`, 'danger');
+        return;
+      }
+
       // Get access token from Supabase Auth
       let accessToken = null;
       if (window.sb && window.sb.auth) {
@@ -60,13 +70,13 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       if (!accessToken) {
-        showAlert('You must be logged in as an admin to register users.', 'danger');
+        showAlert('You must be logged in to register users.', 'danger');
         return;
       }
 
       // Call correct Edge Function for registration
       let EDGE_URL = 'https://vgaxwdipyghoxdtqkfrl.supabase.co/functions/v1/register-trainer';
-      if (payload.role === 'athlete' || window.location.pathname.endsWith('add-athlete.html')) {
+      if (isAthleteFlow) {
         EDGE_URL = 'https://vgaxwdipyghoxdtqkfrl.supabase.co/functions/v1/register-athlete';
       }
 
@@ -92,32 +102,48 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       // Debug: log payload before sending to edge function
       try { console.log('registration payload', JSON.parse(JSON.stringify(payload))); } catch (e) { console.log('payload', payload); }
-      const response = await fetch(EDGE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify(payload)
-      });
-      const result = await response.json();
+      let response;
+      try {
+        response = await fetch(EDGE_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify(payload)
+        });
+      } catch (networkErr) {
+        showAlert(`${entityLabel} creation failed: Could not reach registration service.`, 'danger');
+        console.error('Registration network error:', networkErr);
+        return;
+      }
+
+      let result = {};
+      try {
+        result = await response.json();
+      } catch (_ignored) {
+        result = {};
+      }
+
       // Show Bootstrap alert for success/failure
       if (response.status !== 201 || !result.user) {
-        showAlert('Athlete creation failed: ' + (result.error || JSON.stringify(result)), 'danger');
-      } else {
-        let parts = [];
-        parts.push(`Athlete created: ${result.user.email || result.user.id}`);
-        if (result.temp_password_provided && result.temp_password) {
-          parts.push(`Temporary password: ${result.temp_password}`);
-        }
-        if (result.auth_email_requested) {
-          parts.push('Auth email requested: true');
-        }
-        if (typeof result.email_sent === 'boolean') {
-          parts.push(`Auth email sent: ${result.email_sent}`);
-        }
-        showAlert(parts.join('\n'), 'success');
-        form.reset();
+        const errorDetail = result.error || result.details || `HTTP ${response.status}`;
+        showAlert(`${entityLabel} creation failed: ${errorDetail}`, 'danger');
+        return;
       }
+
+      let parts = [];
+      parts.push(`${entityLabel} created: ${result.user.email || result.user.id}`);
+      if (result.temp_password_provided && result.temp_password) {
+        parts.push(`Temporary password: ${result.temp_password}`);
+      }
+      if (result.auth_email_requested) {
+        parts.push('Auth email requested: true');
+      }
+      if (typeof result.email_sent === 'boolean') {
+        parts.push(`Auth email sent: ${result.email_sent}`);
+      }
+      showAlert(parts.join('\n'), 'success');
+      form.reset();
     });
 });
