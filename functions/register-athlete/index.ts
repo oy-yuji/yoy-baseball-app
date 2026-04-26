@@ -167,7 +167,16 @@ serve(async (req) => {
     if (usersError) {
       try { await supabaseAdmin.auth.admin.deleteUser(newUserId) } catch {}
       console.error('register-athlete: users upsert failed', usersError)
-      return makeResponse({ error: 'Failed to save user profile' }, 500, origin)
+      return makeResponse(
+        {
+          error: 'Failed to save user profile',
+          details: (usersError as any)?.message || String(usersError),
+          code: (usersError as any)?.code || null,
+          hint: (usersError as any)?.hint || null
+        },
+        500,
+        origin
+      )
     }
 
     // Insert athlete profile
@@ -192,7 +201,16 @@ serve(async (req) => {
         await supabaseAdmin.auth.admin.deleteUser(newUserId)
       } catch {}
       console.error('register-athlete: athlete profile creation failed', profileErr)
-      return makeResponse({ error: 'Failed to create athlete profile' }, 500, origin)
+      return makeResponse(
+        {
+          error: 'Failed to create athlete profile',
+          details: (profileErr as any)?.message || String(profileErr),
+          code: (profileErr as any)?.code || null,
+          hint: (profileErr as any)?.hint || null
+        },
+        500,
+        origin
+      )
     }
 
     // Always send onboarding/reset email by default so new athletes can activate access.
@@ -200,7 +218,7 @@ serve(async (req) => {
     let email_sent = false
     let reset_email_error: string | null = null
     const sendResetEmail = !(body?.send_reset_email === false)
-    if (sendResetEmail) {
+    if (temp_password_provided && sendResetEmail) {
       const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
         redirectTo: APP_REDIRECT_URL
       })
@@ -216,7 +234,7 @@ serve(async (req) => {
       athlete: insertedAthlete || null,
       temp_password_provided,
       temp_password: temp_password_provided ? passwordToUse : null,
-      auth_email_requested: sendResetEmail,
+      auth_email_requested: temp_password_provided && sendResetEmail,
       reset_email_error,
       email_sent
     }
@@ -224,6 +242,12 @@ serve(async (req) => {
     return makeResponse(responseBody, 201, origin)
   } catch (err) {
     console.error('register-athlete: unhandled error', err)
-    return makeResponse({ error: 'Internal server error' }, 500)
+    return makeResponse(
+      {
+        error: 'Internal server error',
+        details: (err as any)?.message || String(err)
+      },
+      500
+    )
   }
 })

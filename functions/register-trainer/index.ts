@@ -165,6 +165,7 @@ serve(async (req) => {
     // Don't copy role-specific profile fields into `users` (they belong in trainers/athletes)
     const excludeKeys = [
       'password', 'token', 'access_token', 'admin_token', 'athleteData',
+      'send_reset_email',
       // trainer-specific
       'bio',
       // athlete-specific
