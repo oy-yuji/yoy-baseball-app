@@ -192,7 +192,12 @@ serve(async (req) => {
     // Insert role-specific profile; if this fails, roll back users + auth user to avoid orphans
     try {
       if (role === 'trainer') {
-        const { error: trainerErr } = await supabaseAdmin.from('trainers').insert([{ id: newUserId, bio: bio || null }])
+        const trainerRow: any = { id: newUserId }
+        // Keep trainer profile insert tolerant of schemas where `bio` might not exist.
+        if (typeof bio === 'string' && bio.trim()) {
+          trainerRow.bio = bio.trim()
+        }
+        const { error: trainerErr } = await supabaseAdmin.from('trainers').insert([trainerRow])
         if (trainerErr) throw trainerErr
       } else if (role === 'athlete') {
         const athleteRow = {
@@ -217,7 +222,16 @@ serve(async (req) => {
       } catch (rbErr) {
         console.error('register-trainer: rollback failed', rbErr)
       }
-      return makeResponse({ error: 'Failed to create role profile' }, 500, origin)
+      return makeResponse(
+        {
+          error: 'Failed to create role profile',
+          details: (profileErr as any)?.message || String(profileErr),
+          code: (profileErr as any)?.code || null,
+          hint: (profileErr as any)?.hint || null
+        },
+        500,
+        origin
+      )
     }
 
     // Send password reset email only when we generated a temp password
@@ -251,6 +265,12 @@ serve(async (req) => {
     return makeResponse(responseBody, 201, origin)
   } catch (err) {
     console.error('register-trainer: unhandled error', err)
-    return makeResponse({ error: 'Internal server error' }, 500)
+    return makeResponse(
+      {
+        error: 'Internal server error',
+        details: (err as any)?.message || String(err)
+      },
+      500
+    )
   }
 })
