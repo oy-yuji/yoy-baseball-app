@@ -1,6 +1,10 @@
 (function initThemeEarly() {
   try {
-    var theme = window.localStorage.getItem('yoy_theme') === 'dark' ? 'dark' : 'light';
+    var storedTheme = window.localStorage.getItem('yoy_theme');
+    var theme = storedTheme === 'light' ? 'light' : 'dark';
+    if (!storedTheme) {
+      window.localStorage.setItem('yoy_theme', theme);
+    }
     document.documentElement.setAttribute('data-theme', theme);
 
     if (theme === 'dark') {
@@ -10,6 +14,6 @@
       document.head.appendChild(style);
     }
   } catch (e) {
-    // Keep default light rendering if storage is unavailable.
+    // Keep rendering resilient even if storage is unavailable.
   }
 })();

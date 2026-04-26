@@ -222,6 +222,7 @@ serve(async (req) => {
 
     // Send password reset email only when we generated a temp password
     let email_sent = false
+    let reset_email_error: string | null = null
     // Send password reset email only when we generated a temp password and the
     // caller did not explicitly disable emails (useful for bulk test account creation).
     const sendResetEmail = !(body?.send_reset_email === false)
@@ -232,6 +233,7 @@ serve(async (req) => {
       if (resetError) {
         console.error('register-trainer: resetPasswordForEmail failed', resetError)
         email_sent = false
+        reset_email_error = resetError.message || 'Failed to send auth email'
       } else {
         email_sent = true
       }
@@ -240,6 +242,9 @@ serve(async (req) => {
     const responseBody: any = {
       user: { id: newUserId, email, role, full_name },
       temp_password_provided,
+      temp_password: temp_password_provided ? passwordToUse : null,
+      auth_email_requested: temp_password_provided && sendResetEmail,
+      reset_email_error,
       email_sent
     }
 

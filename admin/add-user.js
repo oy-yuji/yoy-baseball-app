@@ -137,11 +137,14 @@ document.addEventListener('DOMContentLoaded', function() {
       if (result.temp_password_provided && result.temp_password) {
         parts.push(`Temporary password: ${result.temp_password}`);
       }
-      if (result.auth_email_requested) {
-        parts.push('Auth email requested: true');
+      if (typeof result.auth_email_requested === 'boolean') {
+        parts.push(`Auth email requested: ${result.auth_email_requested}`);
       }
       if (typeof result.email_sent === 'boolean') {
         parts.push(`Auth email sent: ${result.email_sent}`);
+      }
+      if (result.reset_email_error) {
+        parts.push(`Auth email error: ${result.reset_email_error}`);
       }
       showAlert(parts.join('\n'), 'success');
       form.reset();

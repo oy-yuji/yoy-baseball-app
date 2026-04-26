@@ -6,6 +6,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Add Trainer</title>
+    <style>
+      .password-help-note {
+        margin-top: 0.55rem;
+        padding: 0.55rem 0.7rem;
+        border-radius: 0.5rem;
+        border: 1px solid #b6d4fe;
+        background: #e7f1ff;
+        color: #084298;
+        font-size: 0.92rem;
+        font-weight: 600;
+      }
+      :root[data-theme='dark'] .password-help-note {
+        border-color: #334155;
+        background: #152238;
+        color: #dbeafe;
+      }
+    </style>
   </head>
   <body>
     <nav id="siteNavbar" class="navbar navbar-expand-lg navbar-dark bg-secondary" style="position:fixed;top:0;width:100%;z-index:1000;">
@@ -28,7 +45,8 @@
         </div>
         <div class="mb-3">
           <label for="password" class="form-label">Temporary Password</label>
-          <input type="password" class="form-control" id="password" name="password" required />
+          <input type="password" class="form-control" id="password" name="password" />
+          <div class="password-help-note">Leave blank to email a secure password setup link. Enter a password to set it manually now.</div>
         </div>
         <div class="mb-3">
           <label for="full_name" class="form-label">Full Name</label>

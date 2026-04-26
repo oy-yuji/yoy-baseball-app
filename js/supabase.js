@@ -23,7 +23,12 @@
 	}
 
 	function getStoredTheme() {
-		return window.localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+		const storedTheme = window.localStorage.getItem(THEME_KEY);
+		if (!storedTheme) {
+			window.localStorage.setItem(THEME_KEY, 'dark');
+			return 'dark';
+		}
+		return storedTheme === 'light' ? 'light' : 'dark';
 	}
 
 	function setStoredTheme(theme) {

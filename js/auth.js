@@ -3,6 +3,93 @@ document.addEventListener('DOMContentLoaded', function () {
 	const form = document.getElementById('loginForm');
 	const errorDiv = document.getElementById('loginError');
 
+	function promptForNewPassword() {
+		if (!window.bootstrap || !window.bootstrap.Modal) {
+			const fallback = window.prompt('Enter a new password (minimum 8 characters)');
+			return Promise.resolve(fallback || null);
+		}
+
+		return new Promise((resolve) => {
+			const modalId = `recoveryModal-${Date.now()}`;
+			const passwordId = `recoveryPassword-${Date.now()}`;
+			const modalHost = document.createElement('div');
+			modalHost.innerHTML = `
+				<div class="modal fade" id="${modalId}" tabindex="-1" aria-hidden="true">
+					<div class="modal-dialog modal-dialog-centered">
+						<div class="modal-content">
+							<div class="modal-header">
+								<h5 class="modal-title">Set Your New Password</h5>
+							</div>
+							<div class="modal-body">
+								<p class="mb-2">Choose a new password for your account.</p>
+								<label for="${passwordId}" class="form-label">New Password</label>
+								<input id="${passwordId}" type="password" class="form-control" minlength="8" autocomplete="new-password" />
+								<div class="form-text">Use at least 8 characters.</div>
+								<div class="invalid-feedback">Password must be at least 8 characters.</div>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-outline-secondary" data-action="cancel">Cancel</button>
+								<button type="button" class="btn btn-primary" data-action="save">Update Password</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			`;
+
+			const modalEl = modalHost.firstElementChild;
+			document.body.appendChild(modalEl);
+
+			const passwordInput = modalEl.querySelector(`#${passwordId}`);
+			const saveBtn = modalEl.querySelector('[data-action="save"]');
+			const cancelBtn = modalEl.querySelector('[data-action="cancel"]');
+			const modal = new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+			let settled = false;
+
+			const resolveOnce = (value) => {
+				if (settled) return;
+				settled = true;
+				resolve(value);
+				modal.hide();
+			};
+
+			const submitPassword = () => {
+				const nextPassword = (passwordInput.value || '').trim();
+				if (nextPassword.length < 8) {
+					passwordInput.classList.add('is-invalid');
+					passwordInput.focus();
+					return;
+				}
+				passwordInput.classList.remove('is-invalid');
+				resolveOnce(nextPassword);
+			};
+
+			passwordInput.addEventListener('keydown', (event) => {
+				if (event.key === 'Enter') {
+					event.preventDefault();
+					submitPassword();
+				}
+			});
+			passwordInput.addEventListener('input', () => {
+				if ((passwordInput.value || '').trim().length >= 8) {
+					passwordInput.classList.remove('is-invalid');
+				}
+			});
+
+			saveBtn.addEventListener('click', submitPassword);
+			cancelBtn.addEventListener('click', () => resolveOnce(null));
+			modalEl.addEventListener('hidden.bs.modal', () => {
+				if (!settled) {
+					settled = true;
+					resolve(null);
+				}
+				modalEl.remove();
+			});
+
+			modal.show();
+			setTimeout(() => passwordInput.focus(), 0);
+		});
+	}
+
 	async function handleRecoveryCallback() {
 		if (!window.sb || !window.sb.auth || !errorDiv) return;
 
@@ -20,7 +107,7 @@ document.addEventListener('DOMContentLoaded', function () {
 		errorDiv.classList.add('text-danger');
 		errorDiv.textContent = 'Password reset link detected. Enter a new password.';
 
-		const nextPassword = window.prompt('Enter a new password (minimum 8 characters)');
+		const nextPassword = await promptForNewPassword();
 		if (!nextPassword || nextPassword.length < 8) {
 			errorDiv.textContent = 'Password update cancelled. Please use the reset link again.';
 			return;

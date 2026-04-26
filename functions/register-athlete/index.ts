@@ -198,19 +198,26 @@ serve(async (req) => {
     // Always send onboarding/reset email by default so new athletes can activate access.
     // Can be disabled only when caller explicitly sets send_reset_email = false.
     let email_sent = false
+    let reset_email_error: string | null = null
     const sendResetEmail = !(body?.send_reset_email === false)
     if (sendResetEmail) {
       const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
         redirectTo: APP_REDIRECT_URL
       })
-      if (!resetError) email_sent = true
+      if (!resetError) {
+        email_sent = true
+      } else {
+        reset_email_error = resetError.message || 'Failed to send auth email'
+      }
     }
 
     const responseBody: any = {
       user: { id: newUserId, email, role: 'athlete', full_name },
       athlete: insertedAthlete || null,
       temp_password_provided,
+      temp_password: temp_password_provided ? passwordToUse : null,
       auth_email_requested: sendResetEmail,
+      reset_email_error,
       email_sent
     }
 
