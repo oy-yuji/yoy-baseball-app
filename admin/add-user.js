@@ -52,6 +52,19 @@ document.addEventListener('DOMContentLoaded', function() {
       const isAthleteFlow = payload.role === 'athlete' || window.location.pathname.endsWith('add-athlete.html');
       const entityLabel = isAthleteFlow ? 'Athlete' : 'Trainer';
 
+      // Normalize password: whitespace-only should be treated as empty.
+      const normalizedPassword = String(payload.password || '').trim();
+      if (normalizedPassword) {
+        payload.password = normalizedPassword;
+      } else {
+        delete payload.password;
+      }
+
+      // For trainer creation, blank password means email onboarding flow.
+      if (!isAthleteFlow && !payload.password) {
+        payload.send_reset_email = true;
+      }
+
       // Basic client validation to avoid opaque createUser failures.
       if (payload.password && String(payload.password).length < 6) {
         showAlert(`${entityLabel} creation failed: Password must be at least 6 characters.`, 'danger');

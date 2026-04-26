@@ -9,19 +9,26 @@
     <title>Add Athlete</title>
     <style>
       .password-help-note {
-        margin-top: 0.55rem;
-        padding: 0.55rem 0.7rem;
-        border-radius: 0.5rem;
-        border: 1px solid #b6d4fe;
-        background: #e7f1ff;
-        color: #084298;
-        font-size: 0.92rem;
-        font-weight: 600;
+        margin-top: 0.6rem;
+        padding: 0.7rem 0.85rem;
+        border-radius: 0.65rem;
+        border: 1px solid #8fb8ff;
+        background: #dbeafe;
+        color: #052c65;
+        font-size: 1rem;
+        line-height: 1.45;
+        font-weight: 700;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+      .password-help-note i {
+        margin-top: 0.1rem;
       }
       :root[data-theme='dark'] .password-help-note {
-        border-color: #334155;
-        background: #152238;
-        color: #dbeafe;
+        border-color: #3b82f6;
+        background: #0b1d35;
+        color: #e0ecff;
       }
     </style>
   </head>
@@ -52,7 +59,7 @@
         <div class="mb-3">
           <label for="password" class="form-label">Temporary Password (optional)</label>
           <input type="password" class="form-control" id="password" name="password" />
-          <div class="password-help-note">If left blank, athlete receives an email link to set a new password securely.</div>
+          <div class="password-help-note"><i class="bi bi-envelope-check-fill" aria-hidden="true"></i><span>If left blank, athlete will receive an auth email to set their password.</span></div>
         </div>
         <div class="mb-3">
           <label for="full_name" class="form-label">Full Name</label>
