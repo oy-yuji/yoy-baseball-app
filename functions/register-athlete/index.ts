@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.203.0/http/server.ts'
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!.replace(/\/$/, '')
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const APP_REDIRECT_URL = Deno.env.get('APP_REDIRECT_URL') || 'https://oy-yuji.github.io/yoy-baseball-app/'
 const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') || 'https://oy-yuji.github.io,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://127.0.0.1:5500')
@@ -37,6 +37,42 @@ function getCorsHeaders(origin?: string) {
 
 function makeResponse(obj: any, status = 200, origin?: string) {
   return new Response(JSON.stringify(obj), { status, headers: { ...getCorsHeaders(origin), 'Content-Type': 'application/json' } })
+}
+
+async function createAuthUserViaAdminApi(params: {
+  email: string
+  password: string
+  full_name?: string
+}) {
+  const resp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`
+    },
+    body: JSON.stringify({
+      email: params.email,
+      password: params.password,
+      email_confirm: true,
+      user_metadata: { full_name: params.full_name, role: 'athlete' },
+      app_metadata: { role: 'athlete' }
+    })
+  })
+
+  const json = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    return {
+      user: null,
+      error: {
+        message: (json as any)?.msg || (json as any)?.error_description || (json as any)?.error || `HTTP ${resp.status}`,
+        code: (json as any)?.code || null,
+        status: resp.status
+      }
+    }
+  }
+
+  return { user: (json as any)?.user || json, error: null }
 }
 
 serve(async (req) => {
@@ -103,12 +139,10 @@ serve(async (req) => {
     const passwordToUse = providedPassword || tempPass!
     const temp_password_provided = !providedPassword
 
-    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    const { user: createdUser, error: authError } = await createAuthUserViaAdminApi({
       email,
       password: passwordToUse,
-      email_confirm: true,
-      user_metadata: { full_name, role: 'athlete' },
-      app_metadata: { role: 'athlete' }
+      full_name
     })
     if (authError) {
       console.error('register-athlete: createUser failed', authError)
@@ -122,7 +156,7 @@ serve(async (req) => {
         origin
       )
     }
-    const newUserId = authUser.user?.id
+    const newUserId = createdUser?.id
     if (!newUserId) {
       return makeResponse({ error: 'Failed to create user' }, 500, origin)
     }
