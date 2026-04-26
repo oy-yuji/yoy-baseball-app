@@ -58,8 +58,8 @@
         </div>
         <div class="mb-3">
           <label for="password" class="form-label">Temporary Password (optional)</label>
-          <input type="password" class="form-control" id="password" name="password" />
-          <div class="password-help-note"><i class="bi bi-envelope-check-fill" aria-hidden="true"></i><span>If left blank, athlete will receive an auth email to set their password.</span></div>
+          <input type="password" class="form-control" id="password" name="password" minlength="8" />
+          <div class="password-help-note"><i class="bi bi-envelope-check-fill" aria-hidden="true"></i><span>If entered, password must be at least 8 characters. If left blank, athlete will receive an auth email to set their password.</span></div>
         </div>
         <div class="mb-3">
           <label for="full_name" class="form-label">Full Name</label>

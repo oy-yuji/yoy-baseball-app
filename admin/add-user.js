@@ -66,8 +66,8 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       // Basic client validation to avoid opaque createUser failures.
-      if (payload.password && String(payload.password).length < 6) {
-        showAlert(`${entityLabel} creation failed: Password must be at least 6 characters.`, 'danger');
+      if (payload.password && String(payload.password).length < 8) {
+        showAlert(`${entityLabel} creation failed: Password must be at least 8 characters.`, 'danger');
         return;
       }
 

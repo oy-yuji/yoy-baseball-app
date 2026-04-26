@@ -6,12 +6,16 @@ document.addEventListener('DOMContentLoaded', function () {
 	function promptForNewPassword() {
 		if (!window.bootstrap || !window.bootstrap.Modal) {
 			const fallback = window.prompt('Enter a new password (minimum 8 characters)');
-			return Promise.resolve(fallback || null);
+			if (!fallback || fallback.length < 8) return Promise.resolve(null);
+			const fallbackConfirm = window.prompt('Confirm your new password');
+			if (!fallbackConfirm || fallbackConfirm !== fallback) return Promise.resolve(null);
+			return Promise.resolve(fallback);
 		}
 
 		return new Promise((resolve) => {
 			const modalId = `recoveryModal-${Date.now()}`;
 			const passwordId = `recoveryPassword-${Date.now()}`;
+			const confirmPasswordId = `recoveryConfirmPassword-${Date.now()}`;
 			const modalHost = document.createElement('div');
 			modalHost.innerHTML = `
 				<div class="modal fade" id="${modalId}" tabindex="-1" aria-hidden="true">
@@ -21,11 +25,20 @@ document.addEventListener('DOMContentLoaded', function () {
 								<h5 class="modal-title">Set Your New Password</h5>
 							</div>
 							<div class="modal-body">
-								<p class="mb-2">Choose a new password for your account.</p>
+								<div class="alert alert-info py-2 mb-3" role="alert">
+									<div class="fw-semibold mb-1">Password Requirements</div>
+									<ul class="mb-0 ps-3">
+										<li>At least 8 characters</li>
+										<li>Confirmation password must match exactly</li>
+									</ul>
+								</div>
 								<label for="${passwordId}" class="form-label">New Password</label>
 								<input id="${passwordId}" type="password" class="form-control" minlength="8" autocomplete="new-password" />
-								<div class="form-text">Use at least 8 characters.</div>
+								<div class="form-text">Minimum 8 characters.</div>
 								<div class="invalid-feedback">Password must be at least 8 characters.</div>
+								<label for="${confirmPasswordId}" class="form-label mt-3">Confirm New Password</label>
+								<input id="${confirmPasswordId}" type="password" class="form-control" minlength="8" autocomplete="new-password" />
+								<div class="invalid-feedback">Confirmation password must match exactly.</div>
 							</div>
 							<div class="modal-footer">
 								<button type="button" class="btn btn-outline-secondary" data-action="cancel">Cancel</button>
@@ -40,6 +53,7 @@ document.addEventListener('DOMContentLoaded', function () {
 			document.body.appendChild(modalEl);
 
 			const passwordInput = modalEl.querySelector(`#${passwordId}`);
+			const confirmPasswordInput = modalEl.querySelector(`#${confirmPasswordId}`);
 			const saveBtn = modalEl.querySelector('[data-action="save"]');
 			const cancelBtn = modalEl.querySelector('[data-action="cancel"]');
 			const modal = new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
@@ -54,12 +68,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
 			const submitPassword = () => {
 				const nextPassword = (passwordInput.value || '').trim();
+				const confirmPassword = (confirmPasswordInput.value || '').trim();
 				if (nextPassword.length < 8) {
 					passwordInput.classList.add('is-invalid');
 					passwordInput.focus();
 					return;
 				}
+				if (confirmPassword.length < 8 || confirmPassword !== nextPassword) {
+					confirmPasswordInput.classList.add('is-invalid');
+					confirmPasswordInput.focus();
+					return;
+				}
 				passwordInput.classList.remove('is-invalid');
+				confirmPasswordInput.classList.remove('is-invalid');
 				resolveOnce(nextPassword);
 			};
 
@@ -72,6 +93,19 @@ document.addEventListener('DOMContentLoaded', function () {
 			passwordInput.addEventListener('input', () => {
 				if ((passwordInput.value || '').trim().length >= 8) {
 					passwordInput.classList.remove('is-invalid');
+				}
+			});
+			confirmPasswordInput.addEventListener('keydown', (event) => {
+				if (event.key === 'Enter') {
+					event.preventDefault();
+					submitPassword();
+				}
+			});
+			confirmPasswordInput.addEventListener('input', () => {
+				const nextPassword = (passwordInput.value || '').trim();
+				const confirmPassword = (confirmPasswordInput.value || '').trim();
+				if (confirmPassword.length >= 8 && confirmPassword === nextPassword) {
+					confirmPasswordInput.classList.remove('is-invalid');
 				}
 			});
 
