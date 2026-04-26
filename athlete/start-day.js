@@ -54,6 +54,29 @@ function titleCategory(category) {
 	return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function escapeHtml(value) {
+	return String(value || '')
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+function normalizeVideoUrl(url) {
+	const raw = (url || '').toString().trim();
+	if (!raw) return null;
+	try {
+		const parsed = new URL(raw);
+		if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+			return parsed.toString();
+		}
+		return null;
+	} catch (_err) {
+		return null;
+	}
+}
+
 async function resolveAthleteId(userId) {
 	const { data: athleteByUser, error: byUserError } = await db
 		.from('athletes')
@@ -96,6 +119,8 @@ function flattenSchedule(scheduleRows) {
 					workoutName: workout?.name || 'Workout',
 					exerciseId: exercise.id,
 					exerciseName: exercise.name || 'Exercise',
+					demoVideoUrl: normalizeVideoUrl(exercise.demo_video_url),
+					notes: (exercise.notes || '').toString().trim(),
 					category: normalizeCategory(exercise.category),
 					prescribedSets: workoutExercise.sets,
 					prescribedReps: workoutExercise.reps,
@@ -132,6 +157,12 @@ function renderSchedule(items) {
 			const prescribedSets = item.prescribedSets ?? '-';
 			const prescribedReps = item.prescribedReps ?? '-';
 			const prescribedRest = item.prescribedRest ?? '-';
+			const safeExerciseName = escapeHtml(item.exerciseName);
+			const safeProgramLine = escapeHtml(`${item.programName} • ${item.dayLabel || item.workoutName}`);
+			const safeNotes = escapeHtml(item.notes || '');
+			const exerciseTitle = item.demoVideoUrl
+				? `<a href="${item.demoVideoUrl}" target="_blank" rel="noopener noreferrer" class="link-primary text-decoration-underline">${safeExerciseName}</a>`
+				: safeExerciseName;
 			const exerciseNameLower = (item.exerciseName || '').toLowerCase();
 			const isRunningRelated = /run|sprint|jog|shuttle|tempo|distance|mile|lap/.test(exerciseNameLower);
 			const allowWeightInput = !isRunningRelated;
@@ -160,14 +191,20 @@ function renderSchedule(items) {
 					<div class="card-body">
 						<div class="d-flex justify-content-between align-items-start gap-2 mb-2">
 							<div>
-								<h5 class="card-title mb-1 fw-semibold">${item.exerciseName}</h5>
-								<div class="small text-muted">${item.programName} • ${item.dayLabel || item.workoutName}</div>
+								<h5 class="card-title mb-1 fw-semibold">${exerciseTitle}</h5>
+								<div class="small text-muted">${safeProgramLine}</div>
+								${item.demoVideoUrl ? '<div class="small mt-1"><span class="badge rounded-pill text-bg-info">Video available</span></div>' : ''}
 							</div>
 							<span class="badge text-bg-light">${titleCategory(item.category)}</span>
 						</div>
 
 						<div class="small mb-3 text-secondary">
 							<strong>Assigned:</strong> ${prescribedSets} sets • ${prescribedReps} reps • ${prescribedRest}s rest
+						</div>
+
+						<div class="small mb-3">
+							<strong>Notes:</strong>
+							<div class="mt-1 p-2 rounded border ${safeNotes ? '' : 'text-muted'}">${safeNotes || 'No notes provided for this exercise.'}</div>
 						</div>
 
 						<div class="table-responsive">
@@ -419,7 +456,9 @@ async function loadScheduleForCurrentDate() {
 							exercise:exercises (
 								id,
 								name,
-								category
+												category,
+												demo_video_url,
+												notes
 							)
 						)
 					)
