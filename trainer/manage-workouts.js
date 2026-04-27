@@ -1,5 +1,15 @@
 const db = window.sb || window.db;
-const EXERCISE_CATEGORIES = ['warmup', 'upper', 'lower', 'pitching', 'hitting', 'plyometric', 'hybrid', 'conditioning', 'other'];
+const EXERCISE_CATEGORIES = ['warmup', 'upper', 'lower', 'pitching', 'hitting', 'plyometric', 'conditioning', 'other'];
+const CATEGORY_LABELS = {
+  warmup: 'Warmup',
+  upper: 'Upper',
+  lower: 'Lower',
+  pitching: 'Pitching',
+  hitting: 'Hitting',
+  plyometric: 'Plyometric',
+  conditioning: 'Conditioning',
+  other: 'Other'
+};
 
 function showAlert(message, type = 'success') {
   const el = document.getElementById('pageAlert');
@@ -36,10 +46,11 @@ function renderEmptyState(container) {
 }
 
 function buildCategoryOptions(selected) {
-  const selectedValue = (selected || 'other').toString().toLowerCase();
+  const selectedRaw = (selected || 'other').toString().toLowerCase();
+  const selectedValue = selectedRaw === 'hybrid' ? 'plyometric' : selectedRaw;
   return EXERCISE_CATEGORIES
     .map((category) => {
-      const label = category.charAt(0).toUpperCase() + category.slice(1);
+      const label = CATEGORY_LABELS[category] || (category.charAt(0).toUpperCase() + category.slice(1));
       return `<option value="${category}" ${category === selectedValue ? 'selected' : ''}>${label}</option>`;
     })
     .join('');
@@ -48,7 +59,8 @@ function buildCategoryOptions(selected) {
 function buildExerciseRow(ex, idx, total) {
   const exerciseId = ex.exercise?.id || '';
   const name = escapeHtml(ex.exercise?.name || 'Exercise');
-  const category = (ex.exercise?.category || 'other').toString().toLowerCase();
+  const categoryRaw = (ex.exercise?.category || 'other').toString().toLowerCase();
+  const category = categoryRaw === 'hybrid' ? 'plyometric' : categoryRaw;
   const videoUrl = escapeHtml(ex.exercise?.demo_video_url || '');
   const reps = escapeHtml(ex.reps || '');
   const sets = Number.isFinite(Number(ex.sets)) ? Number(ex.sets) : '';
@@ -224,7 +236,8 @@ async function saveExerciseOrder(card) {
       const repsValue = rows[i].querySelector('.reps-edit')?.value ?? '';
       const restValue = rows[i].querySelector('.rest-edit')?.value?.trim() || '';
       const exerciseName = rows[i].querySelector('.exercise-name-edit')?.value?.trim() || '';
-      const exerciseCategory = (rows[i].querySelector('.exercise-category-edit')?.value || 'other').trim().toLowerCase();
+      const rawCategory = (rows[i].querySelector('.exercise-category-edit')?.value || 'other').trim().toLowerCase();
+      const exerciseCategory = rawCategory === 'plyometric' ? 'hybrid' : rawCategory;
       const exerciseVideo = rows[i].querySelector('.exercise-video-edit')?.value?.trim() || '';
       const parsedSets = Number.parseInt(setsValue, 10);
       const parsedRest = restValue ? Number.parseInt(restValue, 10) : 0;

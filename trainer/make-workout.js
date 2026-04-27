@@ -2,27 +2,48 @@
 const db = window.sb || window.db;
 let allExercises = [];
 
-const CATEGORIES = ['warmup','upper','lower','pitching','hitting','hybrid','conditioning','other'];
-
 async function loadExercises() {
   if (!db) return;
   const { data, error } = await db.from('exercises').select('id, name, category');
-  if (!error && data) allExercises = data;
+  if (!error && data) {
+    allExercises = data.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }
 }
 
-function createCategorySelect(value = '') {
-  return (`<select class="form-select form-select-sm category-select">
-    ${CATEGORIES.map(c => `<option value="${c}" ${c===value? 'selected':''}>${c[0].toUpperCase()+c.slice(1)}</option>`).join('')}
-  </select>`);
-}
-
-function createExerciseSelect(optionsHtml = '') {
-  return (`<select class="form-select form-select-sm exercise-select">
-    ${optionsHtml || '<option value="">Select category</option>'}
-  </select>`);
+function createExercisePicker() {
+  return (`
+    <div class="exercise-picker" style="width:340px;max-width:100%;">
+      <input
+        type="text"
+        class="form-control form-control-sm exercise-filter mb-1"
+        placeholder="Filter exercises..."
+      >
+      <select class="form-select form-select-sm exercise-select" size="8"></select>
+    </div>
+  `);
 }
 
 function makeExerciseOption(e) { return `<option value="${e.id}">${e.name}</option>` }
+
+function renderExerciseOptions(selectEl, filterText = '', selectedValue = '') {
+  if (!selectEl) return;
+
+  const selected = String(selectedValue || '');
+  const needle = String(filterText || '').toLowerCase().trim();
+  const filtered = needle
+    ? allExercises.filter((e) => String(e.name || '').toLowerCase().includes(needle))
+    : allExercises;
+
+  if (!filtered.length) {
+    selectEl.innerHTML = '<option value="">No exercises found</option>';
+    selectEl.value = '';
+    return;
+  }
+
+  selectEl.innerHTML = filtered.map(makeExerciseOption).join('');
+  const hasSelected = filtered.some((e) => String(e.id) === selected);
+  selectEl.value = hasSelected ? selected : String(filtered[0].id);
+}
 
 function numberToLabel(num) {
   let n = num;
@@ -82,10 +103,12 @@ function cleanupOrphanSupersetGroups(container) {
 function seedRowFromSource(row, sourceRow) {
   if (!sourceRow) return;
 
-  const categorySelect = row.querySelector('.category-select');
-  const sourceCategory = sourceRow.querySelector('.category-select')?.value || '';
-  categorySelect.value = sourceCategory || categorySelect.value;
-  categorySelect.dispatchEvent(new Event('change'));
+  const sourceFilter = sourceRow.querySelector('.exercise-filter')?.value || '';
+  const sourceExerciseId = sourceRow.querySelector('.exercise-select')?.value || '';
+  const filterInput = row.querySelector('.exercise-filter');
+  const exerciseSelect = row.querySelector('.exercise-select');
+  if (filterInput) filterInput.value = sourceFilter;
+  renderExerciseOptions(exerciseSelect, sourceFilter, sourceExerciseId);
 
   const sourceSets = sourceRow.querySelector('.sets-input')?.value || '';
   const sourceRest = sourceRow.querySelector('.rest-input')?.value || '';
@@ -117,8 +140,7 @@ function buildRow() {
   const row = document.createElement('div');
   row.className = 'list-group-item workout-row d-flex flex-wrap gap-2 align-items-center';
   row.innerHTML = `
-    <div style="width:160px">${createCategorySelect()}</div>
-    <div style="flex:1">${createExerciseSelect()}</div>
+    ${createExercisePicker()}
     <input type="number" class="form-control form-control-sm sets-input" placeholder="Sets" min="1" style="width:80px">
     <input type="text" class="form-control form-control-sm reps-input" placeholder="Reps" style="width:100px">
     <input type="number" class="form-control form-control-sm rest-input" placeholder="Rest(s)" min="0" style="width:100px">
@@ -128,16 +150,18 @@ function buildRow() {
   `;
 
   // wire events
-  const categorySelect = row.querySelector('.category-select');
+  const filterInput = row.querySelector('.exercise-filter');
   const exerciseSelect = row.querySelector('.exercise-select');
   const removeBtn = row.querySelector('.remove-row');
   const supersetBtn = row.querySelector('.make-superset');
 
-  categorySelect.addEventListener('change', () => {
-    const cat = categorySelect.value;
-    const filtered = allExercises.filter(e => e.category === cat);
-    exerciseSelect.innerHTML = filtered.length ? filtered.map(makeExerciseOption).join('') : '<option value="">No exercises</option>';
-  });
+  renderExerciseOptions(exerciseSelect, '', '');
+
+  if (filterInput) {
+    filterInput.addEventListener('input', () => {
+      renderExerciseOptions(exerciseSelect, filterInput.value, exerciseSelect.value);
+    });
+  }
 
   removeBtn.addEventListener('click', () => {
     const container = row.parentElement;
@@ -189,26 +213,19 @@ async function init() {
   addBtn.addEventListener('click', () => {
     const row = buildRow();
     exerciseList.appendChild(row);
-    // Trigger category change to populate exercise select
-    const catSelect = row.querySelector('.category-select');
-    if (catSelect) catSelect.dispatchEvent(new Event('change'));
   });
 
   if (addSupersetBtn) {
     addSupersetBtn.addEventListener('click', () => {
       const first = buildRow();
       exerciseList.appendChild(first);
-      const catSelect = first.querySelector('.category-select');
-      if (catSelect) catSelect.dispatchEvent(new Event('change'));
       createSupersetPartner(first, exerciseList);
     });
   }
 
-  // Preload one row and trigger category change
+  // Preload one row
   const firstRow = buildRow();
   exerciseList.appendChild(firstRow);
-  const firstCatSelect = firstRow.querySelector('.category-select');
-  if (firstCatSelect) firstCatSelect.dispatchEvent(new Event('change'));
 
   workoutForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -263,8 +280,6 @@ async function init() {
     exerciseList.innerHTML = '';
     const resetRow = buildRow();
     exerciseList.appendChild(resetRow);
-    const resetCatSelect = resetRow.querySelector('.category-select');
-    if (resetCatSelect) resetCatSelect.dispatchEvent(new Event('change'));
   });
 }
 
