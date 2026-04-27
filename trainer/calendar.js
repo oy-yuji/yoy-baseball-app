@@ -98,6 +98,23 @@ function confirmDialog(message, title = 'Confirm Action') {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toIsoDateString(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value && value.start) return new Date(value.start).toISOString().slice(0, 10);
+  return null;
+}
+
 // Wait for FullCalendar to load
 calendarScript.onload = async function() {
   // Get athlete id from URL
@@ -134,7 +151,19 @@ calendarScript.onload = async function() {
   const sidebar = document.createElement('div');
   sidebar.id = 'programSidebar';
   sidebar.className = 'calendar-program-sidebar';
-  sidebar.innerHTML = '<h4 style="font-size:1.1em">Programs</h4><div id="programList"></div>';
+  sidebar.innerHTML = `
+    <h4 style="font-size:1.1em">Schedule Blocks</h4>
+    <div class="calendar-sidebar-section">
+      <div class="calendar-sidebar-label">Programs</div>
+      <input id="programSearch" class="form-control form-control-sm calendar-sidebar-search" placeholder="Search programs...">
+      <div id="programList" class="calendar-sidebar-list"></div>
+    </div>
+    <div class="calendar-sidebar-section mb-0">
+      <div class="calendar-sidebar-label">Workouts</div>
+      <input id="workoutSearch" class="form-control form-control-sm calendar-sidebar-search" placeholder="Search workouts...">
+      <div id="workoutList" class="calendar-sidebar-list"></div>
+    </div>
+  `;
   document.body.appendChild(sidebar);
 
   // Calendar container
@@ -163,104 +192,197 @@ calendarScript.onload = async function() {
     console.error('Failed to load athlete name', e);
   }
 
-  // Fetch trainer's programs
+  // Fetch trainer data for sidebar blocks
   const { data: sessData, error: sessErr } = await window.sb.auth.getSession();
   if (sessErr || !sessData.session) {
     sidebar.innerHTML = '<div class="alert alert-danger">Not logged in.</div>';
     return;
   }
   const trainerId = sessData.session.user.id;
-  const { data: progData, error: progErr } = await window.sb.from('programs').select('id, name').eq('created_by', trainerId);
-  if (progErr) {
-    sidebar.innerHTML = '<div class="alert alert-danger">Failed to load programs.</div>';
+
+  const [programResp, workoutResp] = await Promise.all([
+    window.sb.from('programs').select('id, name').eq('created_by', trainerId),
+    window.sb.from('workouts').select('id, name, category').eq('created_by', trainerId)
+  ]);
+
+  if (programResp.error || workoutResp.error) {
+    sidebar.innerHTML = '<div class="alert alert-danger">Failed to load schedule blocks.</div>';
     return;
   }
 
-  // Render programs as draggable blocks (for FullCalendar external drag)
-  const progList = document.getElementById('programList');
-  progList.innerHTML = progData.map(p =>
-    `<div class="program-draggable list-group-item mb-2 calendar-program-chip" data-id="${p.id}">
-      <strong>${p.name}</strong>
-    </div>`
-  ).join('');
+  const allPrograms = (programResp.data || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  const allWorkouts = (workoutResp.data || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
-  // Enable FullCalendar external drag
+  const programList = document.getElementById('programList');
+  const workoutList = document.getElementById('workoutList');
+  const programSearch = document.getElementById('programSearch');
+  const workoutSearch = document.getElementById('workoutSearch');
+
+  const listState = {
+    programQuery: '',
+    workoutQuery: ''
+  };
+
+  function renderPrograms() {
+    const q = listState.programQuery;
+    const filtered = q
+      ? allPrograms.filter((p) => String(p.name || '').toLowerCase().includes(q))
+      : allPrograms;
+
+    programList.innerHTML = filtered.length
+      ? filtered.map((p) =>
+        `<div class="program-draggable external-draggable list-group-item mb-2 calendar-program-chip" data-block-type="program" data-program-id="${p.id}">
+          <strong>${escapeHtml(p.name)}</strong>
+        </div>`
+      ).join('')
+      : '<div class="small text-muted">No matching programs.</div>';
+
+    document.querySelectorAll('.program-draggable').forEach((el) => {
+      el.style.userSelect = 'none';
+      el.addEventListener('click', async function(e) {
+        if (e.defaultPrevented) return;
+        let details = el.nextElementSibling;
+        if (details && details.classList && details.classList.contains('program-details')) {
+          details.style.display = (details.style.display === 'none' || !details.style.display) ? 'block' : 'none';
+          return;
+        }
+
+        details = document.createElement('div');
+        details.className = 'program-details';
+        details.classList.add('calendar-program-details');
+        details.innerHTML = '<div class="text-muted">Loading program...</div>';
+        el.parentNode.insertBefore(details, el.nextSibling);
+
+        const programId = el.dataset.programId;
+        try {
+          const { data, error } = await window.sb
+            .from('programs')
+            .select(`*, program_workouts (order_index, day_label, workout:workouts (id, name, category, workout_exercises (order_index, sets, reps, rest_seconds, exercise:exercises (id, name))))`)
+            .eq('id', programId)
+            .single();
+
+          if (error || !data) {
+            details.innerHTML = '<div class="text-danger">Failed to load program details.</div>';
+            console.error('program load error', error);
+            return;
+          }
+
+          const pw = (data.program_workouts || []).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+          const html = [];
+          if (data.description) html.push(`<div class="mb-2">${escapeHtml(data.description)}</div>`);
+          if (!pw.length) {
+            html.push('<div class="text-muted">No workouts in this program.</div>');
+          } else {
+            html.push('<div>');
+            pw.forEach((pwi) => {
+              const w = pwi.workout || {};
+              const prefix = pwi.day_label ? `${escapeHtml(pwi.day_label)} - ` : '';
+              html.push(`<div style="margin-bottom:8px"><strong>${prefix}${escapeHtml(w.name || 'Workout')}</strong>`);
+              const exercises = (w.workout_exercises || []).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+              if (exercises.length) {
+                html.push('<ul style="margin:6px 0 0 18px;padding:0;">');
+                exercises.forEach((ex) => {
+                  const exName = ex.exercise?.name || 'Exercise';
+                  html.push(`<li style="margin:2px 0">${escapeHtml(exName)} - ${escapeHtml(ex.sets || '')} sets ${escapeHtml(ex.reps || '')} <span class="text-muted">(rest ${escapeHtml(ex.rest_seconds || 0)}s)</span></li>`);
+                });
+                html.push('</ul>');
+              } else {
+                html.push('<div class="text-muted">No exercises listed for this workout.</div>');
+              }
+              html.push('</div>');
+            });
+            html.push('</div>');
+          }
+          details.innerHTML = html.join('');
+        } catch (err) {
+          details.innerHTML = '<div class="text-danger">Error loading program.</div>';
+          console.error(err);
+        }
+      });
+    });
+  }
+
+  function renderWorkouts() {
+    const q = listState.workoutQuery;
+    const filtered = q
+      ? allWorkouts.filter((w) => String(w.name || '').toLowerCase().includes(q))
+      : allWorkouts;
+
+    workoutList.innerHTML = filtered.length
+      ? filtered.map((w) =>
+        `<div class="external-draggable list-group-item mb-2 calendar-workout-chip" data-block-type="workout" data-workout-id="${w.id}">
+          <div class="fw-semibold">${escapeHtml(w.name)}</div>
+          <div class="small text-muted text-capitalize">${escapeHtml(w.category || 'other')}</div>
+        </div>`
+      ).join('')
+      : '<div class="small text-muted">No matching workouts.</div>';
+  }
+
+  if (programSearch) {
+    programSearch.addEventListener('input', () => {
+      listState.programQuery = String(programSearch.value || '').trim().toLowerCase();
+      renderPrograms();
+    });
+  }
+
+  if (workoutSearch) {
+    workoutSearch.addEventListener('input', () => {
+      listState.workoutQuery = String(workoutSearch.value || '').trim().toLowerCase();
+      renderWorkouts();
+    });
+  }
+
+  renderPrograms();
+  renderWorkouts();
+
+  // Enable FullCalendar external drag for program/workout blocks
   if (window.FullCalendar && window.FullCalendar.Draggable) {
-    new window.FullCalendar.Draggable(progList, {
-      itemSelector: '.program-draggable',
+    new window.FullCalendar.Draggable(sidebar, {
+      itemSelector: '.external-draggable',
       eventData: function(el) {
+        const blockType = el.dataset.blockType || 'program';
         return {
           title: el.textContent.trim(),
-          extendedProps: { programId: el.dataset.id }
+          extendedProps: {
+            blockType,
+            programId: el.dataset.programId || null,
+            workoutId: el.dataset.workoutId || null,
+            exerciseId: el.dataset.exerciseId || null
+          }
         };
       }
     });
   }
 
-  // Attach click handlers to show program contents inline
-  document.querySelectorAll('.program-draggable').forEach(el => {
-    el.style.userSelect = 'none';
-    el.addEventListener('click', async function(e) {
-      // Prevent click when dragging
-      if (e.defaultPrevented) return;
-      // Toggle existing details container
-      let details = el.nextElementSibling;
-      if (details && details.classList && details.classList.contains('program-details')) {
-        if (details.style.display === 'none' || !details.style.display) {
-          details.style.display = 'block';
-        } else {
-          details.style.display = 'none';
-        }
-        return;
-      }
-      // Create details container
-      details = document.createElement('div');
-      details.className = 'program-details';
-      details.classList.add('calendar-program-details');
-      details.innerHTML = '<div class="text-muted">Loading program...</div>';
-      el.parentNode.insertBefore(details, el.nextSibling);
+  async function createQuickProgramFromWorkout(workoutId, workoutName) {
+    const quickProgramName = `Quick: ${workoutName || 'Workout'}`;
+    const { data: pData, error: pErr } = await window.sb
+      .from('programs')
+      .insert({ created_by: trainerId, name: quickProgramName })
+      .select('id, name')
+      .single();
+    if (pErr || !pData) throw new Error(pErr?.message || 'Failed to create quick program');
 
-      const programId = el.dataset.id;
-      try {
-        const { data, error } = await window.sb.from('programs').select(`*, program_workouts (order_index, day_label, workout:workouts (id, name, category, workout_exercises (order_index, sets, reps, rest_seconds, exercise:exercises (id, name))))`).eq('id', programId).single();
-        if (error || !data) {
-          details.innerHTML = '<div class="text-danger">Failed to load program details.</div>';
-          console.error('program load error', error);
-          return;
-        }
-        const pw = (data.program_workouts || []).sort((a,b) => (a.order_index||0) - (b.order_index||0));
-        const html = [];
-        if (data.description) html.push(`<div class="mb-2">${data.description}</div>`);
-        if (!pw.length) {
-          html.push('<div class="text-muted">No workouts in this program.</div>');
-        } else {
-          html.push('<div>');
-          pw.forEach((pwi, idx) => {
-            const w = pwi.workout || {};
-            const prefix = pwi.day_label ? `${pwi.day_label} — ` : '';
-            html.push(`<div style="margin-bottom:8px"><strong>${prefix}${w.name || 'Workout'}</strong>`);
-            const exercises = (w.workout_exercises || []).sort((a,b) => (a.order_index||0) - (b.order_index||0));
-            if (exercises.length) {
-              html.push('<ul style="margin:6px 0 0 18px;padding:0;">');
-              exercises.forEach(ex => {
-                const exName = ex.exercise?.name || 'Exercise';
-                html.push(`<li style="margin:2px 0">${exName} — ${ex.sets || ''} sets ${ex.reps || ''} <span class="text-muted">(rest ${ex.rest_seconds||0}s)</span></li>`);
-              });
-              html.push('</ul>');
-            } else {
-              html.push('<div class="text-muted">No exercises listed for this workout.</div>');
-            }
-            html.push('</div>');
-          });
-          html.push('</div>');
-        }
-        details.innerHTML = html.join('');
-      } catch (err) {
-        details.innerHTML = '<div class="text-danger">Error loading program.</div>';
-        console.error(err);
-      }
-    });
-  });
+    const { error: pwErr } = await window.sb
+      .from('program_workouts')
+      .insert({ program_id: pData.id, workout_id: workoutId, order_index: 0, day_label: 'Day 1' });
+    if (pwErr) throw new Error(pwErr.message || 'Failed to attach workout to quick program');
+
+    return { programId: pData.id, title: quickProgramName };
+  }
+
+  async function insertSchedule(programId, dateStr) {
+    return window.sb
+      .from('athlete_schedule')
+      .insert({
+        athlete_id: athleteId,
+        program_id: programId,
+        scheduled_date: dateStr,
+        assigned_by: trainerId
+      })
+      .select('id')
+      .single();
+  }
 
   // Fetch athlete's scheduled programs
   const today = new Date();
@@ -289,43 +411,47 @@ calendarScript.onload = async function() {
       // Optionally: highlight date
     },
     eventReceive: async function(info) {
-      // This fires when a program is dropped onto a date
-      const programId = (info.draggedEl && info.draggedEl.dataset && info.draggedEl.dataset.id) || (info.event && info.event.extendedProps && info.event.extendedProps.programId) || null;
-      // Try multiple sources for the dropped date: info.date, info.dateStr, or event.start
+      const block = (info.event && info.event.extendedProps) || {};
+      const blockType = block.blockType || 'program';
       const droppedDateCandidate = info.date || info.dateStr || (info.event && info.event.start) || null;
       if (!droppedDateCandidate) {
         showPageNotice('Failed to schedule program: No date selected.');
         try { info.event.remove(); } catch (e) {}
         return;
       }
-      // Normalize to YYYY-MM-DD string
-      let dateStr = null;
-      if (typeof droppedDateCandidate === 'string') {
-        dateStr = droppedDateCandidate;
-      } else if (droppedDateCandidate instanceof Date) {
-        dateStr = droppedDateCandidate.toISOString().slice(0,10);
-      } else if (droppedDateCandidate && droppedDateCandidate.start) {
-        dateStr = new Date(droppedDateCandidate.start).toISOString().slice(0,10);
-      }
+
+      const dateStr = toIsoDateString(droppedDateCandidate);
       if (!dateStr) {
         showPageNotice('Failed to schedule program: Could not determine date string.');
         try { info.event.remove(); } catch (e) {}
         return;
       }
-      // Insert athlete_schedule with assigned_by for RLS and capture DB id
-      const { data: insertData, error } = await window.sb.from('athlete_schedule').insert({
-        athlete_id: athleteId,
-        program_id: programId,
-        scheduled_date: dateStr,
-        assigned_by: trainerId
-      }).select('id').single();
+
+      let programId = block.programId || null;
+      try {
+        if (blockType === 'workout') {
+          const sourceName = (info.draggedEl?.querySelector('.fw-semibold')?.textContent || info.event.title || 'Workout').trim();
+          const quick = await createQuickProgramFromWorkout(block.workoutId, sourceName);
+          programId = quick.programId;
+          info.event.setProp('title', quick.title);
+        }
+      } catch (createErr) {
+        showPageNotice(`Failed to prepare schedule: ${createErr.message}`);
+        info.event.remove();
+        return;
+      }
+
+      const { data: insertData, error } = await insertSchedule(programId, dateStr);
       if (error || !insertData) {
         showPageNotice('Failed to schedule program: ' + (error?.message || 'unknown'));
         info.event.remove();
       } else {
         // store DB schedule id on the event for future updates/deletes
         try { info.event.setExtendedProp('scheduleId', insertData.id); } catch (e) { info.event.setExtendedProp && info.event.setExtendedProp('scheduleId', insertData.id); }
-        info.event.setProp('title', info.draggedEl.textContent.trim());
+        if (!info.event.title || info.event.title === 'Program') {
+          info.event.setProp('title', (info.draggedEl?.textContent || 'Program').trim());
+        }
+        try { info.event.setExtendedProp('programId', programId); } catch (e) {}
       }
     }
     ,

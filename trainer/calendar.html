@@ -8,16 +8,54 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous" />
     <style>
       .calendar-program-sidebar {
-        position: absolute;
+        position: fixed;
         left: 0;
         top: 56px;
         width: 220px;
-        height: calc(100vh - 56px);
+        bottom: 0;
+        height: auto;
         background: #f8fafc;
         border-right: 1px solid #dbe4ee;
         padding: 10px;
-        overflow-y: auto;
+        overflow: hidden;
         z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .calendar-sidebar-section {
+        margin-bottom: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .calendar-sidebar-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      .calendar-sidebar-search {
+        margin-bottom: 6px;
+      }
+
+      .calendar-sidebar-list {
+        max-height: none;
+        min-height: 0;
+        flex: 1;
+        overflow-y: auto;
+        padding-right: 2px;
+      }
+
+      .calendar-workout-chip {
+        cursor: grab;
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 8px;
       }
 
       .calendar-wrapper {
@@ -84,10 +122,16 @@
       }
 
       :root[data-theme='dark'] .calendar-program-chip,
+      :root[data-theme='dark'] .calendar-workout-chip,
       :root[data-theme='dark'] .calendar-program-details,
       :root[data-theme='dark'] .program-modal-card {
         background: #111827;
         border-color: #334155;
+        color: #e2e8f0;
+      }
+
+      :root[data-theme='dark'] .calendar-sidebar-list,
+      :root[data-theme='dark'] .calendar-sidebar-search {
         color: #e2e8f0;
       }
 
@@ -143,8 +187,20 @@
           position: static;
           width: auto;
           height: auto;
+          bottom: auto;
           border-right: 0;
           border-bottom: 1px solid #dbe4ee;
+          overflow: visible;
+          display: block;
+          gap: 0;
+        }
+
+        .calendar-sidebar-section {
+          display: block;
+        }
+
+        .calendar-sidebar-list {
+          max-height: 220px;
         }
 
         .calendar-wrapper {
