@@ -1,4 +1,60 @@
 let currentTrainerId = '';
+let athleteRowsData = [];
+let sortState = { key: null, direction: 'asc' };
+
+function normalizeSearchText(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function compareText(left, right) {
+  return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base' });
+}
+
+function compareNumber(left, right) {
+  const a = Number.parseFloat(left);
+  const b = Number.parseFloat(right);
+  const aMissing = Number.isNaN(a);
+  const bMissing = Number.isNaN(b);
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+  return a - b;
+}
+
+function compareDate(left, right) {
+  const a = Date.parse(left || '');
+  const b = Date.parse(right || '');
+  const aMissing = Number.isNaN(a);
+  const bMissing = Number.isNaN(b);
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+  return a - b;
+}
+
+function getSortedAthletes(rows) {
+  const sorted = [...(rows || [])];
+  if (!sortState.key) return sorted;
+
+  sorted.sort((a, b) => {
+    let result = 0;
+    switch (sortState.key) {
+      case 'height_cm':
+      case 'weight_lbs':
+        result = compareNumber(a[sortState.key], b[sortState.key]);
+        break;
+      case 'birthday':
+        result = compareDate(a[sortState.key], b[sortState.key]);
+        break;
+      default:
+        result = compareText(a[sortState.key], b[sortState.key]);
+        break;
+    }
+    return sortState.direction === 'desc' ? -result : result;
+  });
+
+  return sorted;
+}
 
 function escapeHtml(value) {
   return String(value || '')
@@ -21,6 +77,58 @@ function showAlert(msg, type = 'danger') {
 function clearAlert() {
   const alertContainer = document.getElementById('alertContainer');
   if (alertContainer) alertContainer.innerHTML = '';
+}
+
+function applyAthleteNameFilter() {
+  const input = document.getElementById('athleteSearchInput');
+  const meta = document.getElementById('athleteSearchMeta');
+  const rows = Array.from(document.querySelectorAll('#athletesTableBody tr'));
+  if (!input || !meta) return;
+
+  const query = normalizeSearchText(input.value);
+  let visible = 0;
+
+  rows.forEach((row) => {
+    const name = row.dataset.athleteName || '';
+    const show = !query || name.includes(query);
+    row.classList.toggle('d-none', !show);
+    if (show) visible += 1;
+  });
+
+  if (!rows.length) {
+    meta.textContent = '';
+    return;
+  }
+
+  meta.textContent = query
+    ? `Showing ${visible} of ${rows.length} athletes`
+    : `Showing all ${rows.length} athletes`;
+}
+
+function updateSortHeaderIndicators() {
+  const headers = Array.from(document.querySelectorAll('.sortable-header'));
+  headers.forEach((header) => {
+    const indicator = header.querySelector('.sort-indicator');
+    if (!indicator) return;
+    if (header.dataset.key !== sortState.key) {
+      indicator.textContent = '';
+      return;
+    }
+    indicator.textContent = sortState.direction === 'asc' ? '▲' : '▼';
+  });
+}
+
+function renderAthletesTable() {
+  const sorted = getSortedAthletes(athleteRowsData);
+  renderAthleteRows(sorted);
+  updateSortHeaderIndicators();
+}
+
+function bindAthleteSearch() {
+  const input = document.getElementById('athleteSearchInput');
+  if (!input || input.dataset.bound === 'true') return;
+  input.addEventListener('input', applyAthleteNameFilter);
+  input.dataset.bound = 'true';
 }
 
 function confirmActionModal(message, title = 'Confirm Action') {
@@ -110,22 +218,41 @@ function confirmActionModal(message, title = 'Confirm Action') {
   });
 }
 
-function renderAthleteRows(athletes, usersById = {}, useJoined = false) {
+function bindAthleteSortHeaders() {
+  const headers = Array.from(document.querySelectorAll('.sortable-header'));
+  headers.forEach((header) => {
+    if (header.dataset.bound === 'true') return;
+    header.addEventListener('click', () => {
+      const key = header.dataset.key || '';
+      if (!key) return;
+      if (sortState.key === key) {
+        sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortState.key = key;
+        sortState.direction = 'asc';
+      }
+      renderAthletesTable();
+    });
+    header.dataset.bound = 'true';
+  });
+}
+
+function renderAthleteRows(rows) {
   const tbody = document.getElementById('athletesTableBody');
   if (!tbody) return;
 
   tbody.innerHTML = '';
-  athletes.forEach((a) => {
-    const user = useJoined ? (a.users || {}) : (usersById[a.id] || {});
-    const fullName = user.full_name || '';
+  rows.forEach((a) => {
+    const fullName = a.full_name || '';
     const row = document.createElement('tr');
+    row.dataset.athleteName = normalizeSearchText(fullName);
     row.innerHTML = `
       <td>
         <a href="calendar.html?athlete=${encodeURIComponent(a.id)}" class="text-primary text-decoration-underline" title="Open Calendar">
           ${escapeHtml(fullName)}
         </a>
       </td>
-      <td>${escapeHtml(user.email || '')}</td>
+      <td>${escapeHtml(a.email || '')}</td>
       <td>${escapeHtml(a.position || '')}</td>
       <td>${escapeHtml(a.height_cm || '')}</td>
       <td>${escapeHtml(a.weight_lbs || '')}</td>
@@ -137,6 +264,8 @@ function renderAthleteRows(athletes, usersById = {}, useJoined = false) {
     `;
     tbody.appendChild(row);
   });
+
+  applyAthleteNameFilter();
 }
 
 async function deleteAthleteAsTrainer(athleteId, athleteName) {
@@ -241,6 +370,8 @@ async function loadMyAthletes() {
       if (!athletes.length) {
         const tbody = document.getElementById('athletesTableBody');
         if (tbody) tbody.innerHTML = '';
+        athleteRowsData = [];
+        updateSortHeaderIndicators();
         showAlert('No athletes found.', 'info');
         return;
       }
@@ -256,12 +387,37 @@ async function loadMyAthletes() {
         }
       }
 
-      renderAthleteRows(athletes, usersById, false);
+      athleteRowsData = athletes.map((a) => {
+        const user = usersById[a.id] || {};
+        return {
+          id: a.id,
+          full_name: user.full_name || '',
+          email: user.email || '',
+          position: a.position,
+          height_cm: a.height_cm,
+          weight_lbs: a.weight_lbs,
+          birthday: a.birthday,
+          throwing_side: a.throwing_side,
+          batting_side: a.batting_side
+        };
+      });
+      renderAthletesTable();
       clearAlert();
       return;
     }
 
-    renderAthleteRows(athletes, {}, true);
+    athleteRowsData = athletes.map((a) => ({
+      id: a.id,
+      full_name: a.users?.full_name || '',
+      email: a.users?.email || '',
+      position: a.position,
+      height_cm: a.height_cm,
+      weight_lbs: a.weight_lbs,
+      birthday: a.birthday,
+      throwing_side: a.throwing_side,
+      batting_side: a.batting_side
+    }));
+    renderAthletesTable();
     clearAlert();
   } catch (err) {
     showAlert('Error loading athletes: ' + (err.message || err));
@@ -271,6 +427,8 @@ async function loadMyAthletes() {
 
 function initMyAthletesPage() {
   bindDeleteButtons();
+  bindAthleteSearch();
+  bindAthleteSortHeaders();
   loadMyAthletes();
 }
 
