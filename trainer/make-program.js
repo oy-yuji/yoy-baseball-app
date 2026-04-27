@@ -109,6 +109,28 @@ function renderProgramList() {
   // No-op: SortableJS manages DOM for program container
 }
 
+function decorateProgramItem(item) {
+  if (!item) return;
+
+  if (!item.dataset.seqId) {
+    item.dataset.seqId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  if (!item.querySelector('.program-remove-btn')) {
+    const header = item.querySelector('.d-flex.justify-content-between.align-items-center') || item;
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-sm btn-outline-danger program-remove-btn ms-2';
+    removeBtn.textContent = 'Remove';
+    removeBtn.title = 'Remove this workout from sequence';
+    header.appendChild(removeBtn);
+  }
+
+  // Hide expanded details in sequence to keep the list compact and readable.
+  const detailsDiv = item.querySelector('.workout-details');
+  if (detailsDiv) detailsDiv.style.display = 'none';
+}
+
 function getProgramWorkouts() {
   const items = Array.from(document.querySelectorAll('#programContainer .workout-draggable'));
   return items.map((el, i) => ({
@@ -137,37 +159,27 @@ async function init() {
   // Make each category-workouts container a Sortable
   document.querySelectorAll('.category-workouts').forEach(catList => {
     Sortable.create(catList, {
-      group: { name: 'workouts', pull: 'clone', put: true },
+      group: { name: 'workouts', pull: 'clone', put: false },
       sort: false,
       animation: 150,
-      ghostClass: 'sortable-ghost',
-      onAdd: function(evt) {
-        // Remove any duplicate in sidebar
-        const id = evt.item.dataset.id;
-        catList.querySelectorAll('.workout-draggable').forEach(el => {
-          if (el !== evt.item && el.dataset.id === id) el.remove();
-        });
-      },
-      onEnd: evt => {}
+      ghostClass: 'sortable-ghost'
     });
   });
   Sortable.create(programContainer, {
-    group: { name: 'workouts', pull: true, put: true },
+    group: { name: 'workouts', pull: false, put: true },
     animation: 150,
     ghostClass: 'sortable-ghost',
-    onAdd: function (evt) {
-      // Remove the workout from all category lists when added to program sequence
-      const id = evt.item.dataset.id;
-      document.querySelectorAll('.category-workouts .workout-draggable').forEach(el => {
-        if (el.dataset.id === id) el.remove();
-      });
-    },
-    onRemove: function(evt) {
-      // If removed from program and dropped outside, remove from DOM
-      if (!evt.to || !evt.to.classList.contains('category-workouts')) {
-        evt.item.remove();
-      }
+    onAdd: function(evt) {
+      decorateProgramItem(evt.item);
     }
+  });
+
+  // One-click removal for mistaken drops in program sequence.
+  programContainer.addEventListener('click', function(e) {
+    const removeBtn = e.target.closest('.program-remove-btn');
+    if (!removeBtn) return;
+    const block = removeBtn.closest('.workout-draggable');
+    if (block) block.remove();
   });
 
   // Handle form submit

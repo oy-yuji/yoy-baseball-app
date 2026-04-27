@@ -30,6 +30,24 @@
             padding: 0.35rem;
         }
 
+        #programContainer {
+            max-height: 62vh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scroll-behavior: smooth;
+        }
+
+        #programContainer::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        #programContainer::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: content-box;
+        }
+
         .workout-category-block {
             border: 1px solid #dbe4ee;
             border-radius: 8px;
@@ -73,6 +91,13 @@
         :root[data-theme='dark'] .program-column {
             background: #0b1220;
             border-color: #334155;
+        }
+
+        :root[data-theme='dark'] #programContainer::-webkit-scrollbar-thumb {
+            background: #64748b;
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: content-box;
         }
 
         :root[data-theme='dark'] .workout-category-block,
@@ -134,7 +159,7 @@
                     <div class="col-md-8">
                         <label class="form-label">Program Sequence (drag here)</label>
                         <div id="programContainer" class="list-group mb-2 program-column"></div>
-                        <small class="text-muted">Drag workouts from the left. Assign a day/label to each.</small>
+                        <small class="text-muted">Drag workouts from the left. You can reuse the same workout multiple times in the sequence and remove any block with its Remove button.</small>
                     </div>
                 </div>
                                 <div id="programAlert"></div>
