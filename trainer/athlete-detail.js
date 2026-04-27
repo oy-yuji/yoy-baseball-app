@@ -9,6 +9,12 @@ function toLocalDateString(date) {
 	return `${year}-${month}-${day}`;
 }
 
+function diffIsoDates(dateStrA, dateStrB) {
+	const a = new Date(`${dateStrA}T00:00:00`);
+	const b = new Date(`${dateStrB}T00:00:00`);
+	return Math.round((a - b) / 86400000);
+}
+
 function formatDateLabel(date) {
 	return date.toLocaleDateString(undefined, {
 		weekday: 'long',
@@ -66,12 +72,79 @@ function parseSavedSetValue(repsCompleted) {
 	};
 }
 
-function flattenSchedule(scheduleRows) {
+function buildDayIndexByScheduleId(schedules) {
+	const programDates = new Map();
+	for (const schedule of schedules || []) {
+		const programId = schedule?.program_id;
+		const dateStr = schedule?.scheduled_date ? toLocalDateString(new Date(`${schedule.scheduled_date}T00:00:00`)) : null;
+		if (!programId || !dateStr) continue;
+		if (!programDates.has(programId)) programDates.set(programId, new Set());
+		programDates.get(programId).add(dateStr);
+	}
+
+	const programDateIndex = new Map();
+	for (const [programId, dateSet] of programDates.entries()) {
+		const sortedDates = Array.from(dateSet).sort();
+		let lastDate = null;
+		let dayIndex = 0;
+		for (const dateStr of sortedDates) {
+			if (lastDate && diffIsoDates(dateStr, lastDate) === 1) {
+				dayIndex += 1;
+			} else {
+				dayIndex = 0;
+			}
+			programDateIndex.set(`${programId}|${dateStr}`, dayIndex);
+			lastDate = dateStr;
+		}
+	}
+
+	const scheduleIndex = new Map();
+	for (const schedule of schedules || []) {
+		const programId = schedule?.program_id;
+		const dateStr = schedule?.scheduled_date ? toLocalDateString(new Date(`${schedule.scheduled_date}T00:00:00`)) : null;
+		if (!programId || !dateStr || !schedule?.id) continue;
+		const key = `${programId}|${dateStr}`;
+		if (programDateIndex.has(key)) {
+			scheduleIndex.set(String(schedule.id), programDateIndex.get(key));
+		}
+	}
+
+	return scheduleIndex;
+}
+
+async function buildProgramDayIndexMap(scheduleRows, athleteId) {
+	const programIds = Array.from(new Set(
+		(scheduleRows || [])
+			.map(row => row?.program?.id)
+			.filter(Boolean)
+	));
+	if (!programIds.length) return new Map();
+
+	const { data, error } = await db
+		.from('athlete_schedule')
+		.select('id, scheduled_date, program_id')
+		.eq('athlete_id', athleteId)
+		.in('program_id', programIds);
+
+	if (error) {
+		console.error('Failed to load program schedule map:', error);
+		return new Map();
+	}
+
+	return buildDayIndexByScheduleId(data || []);
+}
+
+function flattenSchedule(scheduleRows, dayIndexMap) {
 	const exerciseItems = [];
 
 	for (const schedule of scheduleRows || []) {
 		const program = schedule.program;
-		const programWorkouts = (program?.program_workouts || []).slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+		let programWorkouts = (program?.program_workouts || []).slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+		const dayIndex = dayIndexMap?.get(String(schedule.id));
+		if (Number.isInteger(dayIndex)) {
+			const selected = programWorkouts[dayIndex];
+			programWorkouts = selected ? [selected] : [];
+		}
 
 		for (const programWorkout of programWorkouts) {
 			const workout = programWorkout.workout;
@@ -292,7 +365,8 @@ async function loadAthleteDayView() {
 		return;
 	}
 
-	const exerciseItems = flattenSchedule(schedules || []);
+	const dayIndexMap = await buildProgramDayIndexMap(schedules || [], athleteId);
+	const exerciseItems = flattenSchedule(schedules || [], dayIndexMap);
 	const summary = document.getElementById('summary');
 	if (summary) {
 		summary.innerHTML = `

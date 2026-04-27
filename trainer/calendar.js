@@ -118,6 +118,36 @@ function toIsoDateString(value) {
   return null;
 }
 
+function addDaysToIsoDate(dateStr, offset) {
+  if (!dateStr) return null;
+  const base = new Date(`${dateStr}T00:00:00`);
+  base.setDate(base.getDate() + offset);
+  return base.toISOString().slice(0, 10);
+}
+
+function diffIsoDates(dateStrA, dateStrB) {
+  const a = new Date(`${dateStrA}T00:00:00`);
+  const b = new Date(`${dateStrB}T00:00:00`);
+  return Math.round((a - b) / 86400000);
+}
+
+function findContiguousBlock(dates, anchorDate) {
+  if (!Array.isArray(dates) || !dates.length) return [];
+  const sorted = Array.from(new Set(dates)).sort();
+  const index = sorted.indexOf(anchorDate);
+  if (index === -1) return [];
+
+  let start = index;
+  let end = index;
+  while (start > 0 && diffIsoDates(sorted[start], sorted[start - 1]) === 1) {
+    start -= 1;
+  }
+  while (end < sorted.length - 1 && diffIsoDates(sorted[end + 1], sorted[end]) === 1) {
+    end += 1;
+  }
+  return sorted.slice(start, end + 1);
+}
+
 function cleanDisplayName(value, fallback = 'Program') {
   const raw = String(value || '').trim();
   if (!raw) return fallback;
@@ -158,6 +188,81 @@ function dedupeProgramWorkouts(items) {
     out.push(item);
   }
   return out;
+}
+
+function normalizeProgramWorkoutList(items) {
+  return dedupeProgramWorkouts(items)
+    .slice()
+    .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+}
+
+function buildDayIndexByScheduleId(schedules) {
+  const programDates = new Map();
+  for (const schedule of schedules || []) {
+    const programId = schedule?.program_id;
+    const dateStr = toIsoDateString(schedule?.scheduled_date);
+    if (!programId || !dateStr) continue;
+    if (!programDates.has(programId)) programDates.set(programId, new Set());
+    programDates.get(programId).add(dateStr);
+  }
+
+  const programDateIndex = new Map();
+  for (const [programId, dateSet] of programDates.entries()) {
+    const sortedDates = Array.from(dateSet).sort();
+    let lastDate = null;
+    let dayIndex = 0;
+    for (const dateStr of sortedDates) {
+      if (lastDate && diffIsoDates(dateStr, lastDate) === 1) {
+        dayIndex += 1;
+      } else {
+        dayIndex = 0;
+      }
+      programDateIndex.set(`${programId}|${dateStr}`, dayIndex);
+      lastDate = dateStr;
+    }
+  }
+
+  const scheduleIndex = new Map();
+  for (const schedule of schedules || []) {
+    const programId = schedule?.program_id;
+    const dateStr = toIsoDateString(schedule?.scheduled_date);
+    if (!programId || !dateStr || !schedule?.id) continue;
+    const key = `${programId}|${dateStr}`;
+    if (programDateIndex.has(key)) {
+      scheduleIndex.set(String(schedule.id), programDateIndex.get(key));
+    }
+  }
+
+  return scheduleIndex;
+}
+
+function buildProgramEventTitle(programName, workoutItems, dayIndex) {
+  if (!Array.isArray(workoutItems) || workoutItems.length === 0) return programName;
+  const safeIndex = Number.isInteger(dayIndex) ? dayIndex : 0;
+  const item = workoutItems[safeIndex] || workoutItems[0];
+  const dayLabel = item?.day_label || `Day ${safeIndex + 1}`;
+  const workoutName = item?.workout?.name || 'Workout';
+  return `${programName} — ${dayLabel}: ${workoutName}`;
+}
+
+async function loadProgramSummary(programId, fallbackName) {
+  if (!programId) {
+    return { name: cleanDisplayName(fallbackName || 'Program', 'Program'), workouts: [] };
+  }
+  const { data, error } = await window.sb
+    .from('programs')
+    .select('id, name, program_workouts (order_index, day_label, workout:workouts (id, name))')
+    .eq('id', programId)
+    .single();
+
+  if (error || !data) {
+    return { name: cleanDisplayName(fallbackName || 'Program', 'Program'), workouts: [] };
+  }
+
+  return {
+    name: cleanDisplayName(data.name || fallbackName || 'Program', 'Program'),
+    workouts: normalizeProgramWorkoutList(data.program_workouts || [])
+  };
 }
 
 // Wait for FullCalendar to load
@@ -438,29 +543,50 @@ calendarScript.onload = async function() {
     return { programId: pData.id, title: visibleName };
   }
 
-  async function insertSchedule(programId, dateStr) {
+  async function insertSchedules(rows) {
     return window.sb
       .from('athlete_schedule')
-      .insert({
-        athlete_id: athleteId,
-        program_id: programId,
-        scheduled_date: dateStr,
-        assigned_by: trainerId
-      })
-      .select('id')
-      .single();
+      .insert(rows)
+      .select('id, scheduled_date');
   }
 
   // Fetch athlete's scheduled programs
   const today = new Date();
   const { data: schedData, error: schedErr } = await window.sb.from('athlete_schedule').select('id, scheduled_date, program_id, programs(name)').eq('athlete_id', athleteId);
-  const events = (schedData || []).map(s => ({
-    id: s.id,
-    title: cleanDisplayName(s.programs?.name || 'Program', 'Program'),
-    start: s.scheduled_date,
-    extendedProps: { programId: s.program_id },
-    allDay: true
-  }));
+  const scheduleRows = schedData || [];
+  const programIdsForSchedule = Array.from(new Set(scheduleRows.map(s => s.program_id).filter(Boolean)));
+  let programDetails = [];
+  if (programIdsForSchedule.length) {
+    const { data } = await window.sb
+      .from('programs')
+      .select('id, name, program_workouts (order_index, day_label, workout:workouts (id, name))')
+      .in('id', programIdsForSchedule);
+    programDetails = data || [];
+  }
+  const programWorkoutsMap = new Map(
+    (programDetails || []).map(p => [
+      p.id,
+      normalizeProgramWorkoutList(p.program_workouts || [])
+    ])
+  );
+  const dayIndexMap = buildDayIndexByScheduleId(scheduleRows);
+
+  const events = scheduleRows.map(s => {
+    const programName = cleanDisplayName(s.programs?.name || 'Program', 'Program');
+    const workoutItems = programWorkoutsMap.get(s.program_id) || [];
+    const dayIndex = dayIndexMap.get(String(s.id));
+    return {
+      id: s.id,
+      title: buildProgramEventTitle(programName, workoutItems, dayIndex),
+      start: s.scheduled_date,
+      extendedProps: {
+        programId: s.program_id,
+        scheduleId: s.id,
+        dayIndex: dayIndex
+      },
+      allDay: true
+    };
+  });
 
   // Render FullCalendar
   const calendar = new window.FullCalendar.Calendar(calDiv, {
@@ -495,33 +621,60 @@ calendarScript.onload = async function() {
       }
 
       let programId = block.programId || null;
+      let fallbackName = cleanDisplayName(info.event?.title || info.draggedEl?.textContent || 'Program', 'Program');
       try {
         if (blockType === 'workout') {
           const sourceName = cleanDisplayName(info.draggedEl?.querySelector('.fw-semibold')?.textContent || info.event.title || 'Workout', 'Workout');
           const quick = await createQuickProgramFromWorkout(block.workoutId, sourceName);
           programId = quick.programId;
-          info.event.setProp('title', sourceName);
+          fallbackName = quick.title || sourceName;
+          info.event.setProp('title', fallbackName);
         }
       } catch (createErr) {
         showPageNotice(`Failed to prepare schedule: ${createErr.message}`);
         info.event.remove();
         return;
       }
+      const summary = await loadProgramSummary(programId, fallbackName);
+      const workoutItems = summary.workouts.length
+        ? summary.workouts
+        : [{ day_label: 'Day 1', workout: { name: 'Workout' } }];
 
-      const { data: insertData, error } = await insertSchedule(programId, dateStr);
+      const scheduleRowsToInsert = workoutItems.map((item, idx) => ({
+        athlete_id: athleteId,
+        program_id: programId,
+        scheduled_date: addDaysToIsoDate(dateStr, idx),
+        assigned_by: trainerId
+      }));
+
+      const { data: insertData, error } = await insertSchedules(scheduleRowsToInsert);
       if (error || !insertData) {
         showPageNotice('Failed to schedule program: ' + (error?.message || 'unknown'));
         info.event.remove();
-      } else {
-        // store DB schedule id on the event for future updates/deletes
-        try { info.event.setExtendedProp('scheduleId', insertData.id); } catch (e) { info.event.setExtendedProp && info.event.setExtendedProp('scheduleId', insertData.id); }
-        if (!info.event.title || info.event.title === 'Program') {
-          info.event.setProp('title', cleanDisplayName(info.draggedEl?.textContent || 'Program', 'Program'));
-        } else {
-          info.event.setProp('title', cleanDisplayName(info.event.title, 'Program'));
-        }
-        try { info.event.setExtendedProp('programId', programId); } catch (e) {}
+        return;
       }
+
+      const insertedByDate = new Map(
+        (insertData || []).map(row => [toIsoDateString(row.scheduled_date), row.id])
+      );
+
+      info.event.remove();
+
+      workoutItems.forEach((item, idx) => {
+        const eventDate = addDaysToIsoDate(dateStr, idx);
+        const scheduleId = insertedByDate.get(eventDate);
+        calendar.addEvent({
+          id: scheduleId || undefined,
+          title: buildProgramEventTitle(summary.name, workoutItems, idx),
+          start: eventDate,
+          allDay: true,
+          extendedProps: {
+            programId: programId,
+            scheduleId: scheduleId,
+            dayIndex: idx
+          }
+        });
+      });
     }
     ,
     eventDrop: async function(info) {
@@ -561,7 +714,7 @@ calendarScript.onload = async function() {
       document.body.appendChild(backdrop);
       backdrop.addEventListener('click', function(e){ if (e.target === backdrop) backdrop.remove(); });
       card.querySelector('#pc-close').addEventListener('click', () => backdrop.remove());
-      // Delete handler (deletes athlete_schedule row and removes event)
+      // Delete handler (deletes all contiguous program days and removes events)
       card.querySelector('#pc-delete').addEventListener('click', async function() {
         const ok = await confirmDialog('Delete this scheduled program?', 'Delete Schedule');
         if (!ok) return;
@@ -570,13 +723,57 @@ calendarScript.onload = async function() {
           showPageNotice('Cannot delete: missing schedule id');
           return;
         }
-        const { error } = await window.sb.from('athlete_schedule').delete().eq('id', scheduleId);
-        if (error) {
-          showPageNotice('Failed to delete schedule: ' + error.message);
-        } else {
+        const scheduleDate = toIsoDateString(info.event?.start);
+        const programId = info.event?.extendedProps?.programId;
+
+        if (!scheduleDate || !programId) {
+          const { error } = await window.sb.from('athlete_schedule').delete().eq('id', scheduleId);
+          if (error) {
+            showPageNotice('Failed to delete schedule: ' + error.message);
+            return;
+          }
           info.event.remove();
           backdrop.remove();
+          return;
         }
+
+        const { data: programSchedules, error: listErr } = await window.sb
+          .from('athlete_schedule')
+          .select('id, scheduled_date')
+          .eq('athlete_id', athleteId)
+          .eq('program_id', programId);
+
+        if (listErr) {
+          showPageNotice('Failed to load program schedule: ' + listErr.message);
+          return;
+        }
+
+        const dateList = (programSchedules || [])
+          .map(row => toIsoDateString(row.scheduled_date))
+          .filter(Boolean);
+        const blockDates = findContiguousBlock(dateList, scheduleDate);
+        const deleteIds = (programSchedules || [])
+          .filter(row => blockDates.includes(toIsoDateString(row.scheduled_date)))
+          .map(row => row.id);
+
+        if (!deleteIds.length) {
+          showPageNotice('No matching block to delete.', 'warning');
+          return;
+        }
+
+        const { error } = await window.sb.from('athlete_schedule').delete().in('id', deleteIds);
+        if (error) {
+          showPageNotice('Failed to delete schedule: ' + error.message);
+          return;
+        }
+
+        info.event.remove();
+        calendar.getEvents().forEach((ev) => {
+          if (deleteIds.includes(ev.extendedProps?.scheduleId || ev.id)) {
+            ev.remove();
+          }
+        });
+        backdrop.remove();
       });
 
       try {

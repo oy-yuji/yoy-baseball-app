@@ -131,11 +131,32 @@ function decorateProgramItem(item) {
   if (detailsDiv) detailsDiv.style.display = 'none';
 }
 
+function getProgramDayLabel(index) {
+  return `Day ${index + 1}`;
+}
+
+function refreshProgramSequenceLabels() {
+  const items = Array.from(document.querySelectorAll('#programContainer .workout-draggable'));
+  items.forEach((item, index) => {
+    const dayLabel = getProgramDayLabel(index);
+    item.dataset.dayLabel = dayLabel;
+
+    let dayMeta = item.querySelector('.program-day-meta');
+    if (!dayMeta) {
+      dayMeta = document.createElement('div');
+      dayMeta.className = 'program-day-meta';
+      item.prepend(dayMeta);
+    }
+    dayMeta.innerHTML = `<span class="badge text-bg-primary program-day-badge">${dayLabel}</span>`;
+  });
+}
+
 function getProgramWorkouts() {
   const items = Array.from(document.querySelectorAll('#programContainer .workout-draggable'));
   return items.map((el, i) => ({
     workout_id: el.dataset.id,
-    order_index: i
+    order_index: i,
+    day_label: el.dataset.dayLabel || getProgramDayLabel(i)
   }));
 }
 
@@ -171,6 +192,16 @@ async function init() {
     ghostClass: 'sortable-ghost',
     onAdd: function(evt) {
       decorateProgramItem(evt.item);
+      refreshProgramSequenceLabels();
+    },
+    onUpdate: function() {
+      refreshProgramSequenceLabels();
+    },
+    onRemove: function() {
+      refreshProgramSequenceLabels();
+    },
+    onSort: function() {
+      refreshProgramSequenceLabels();
     }
   });
 
@@ -180,6 +211,7 @@ async function init() {
     if (!removeBtn) return;
     const block = removeBtn.closest('.workout-draggable');
     if (block) block.remove();
+    refreshProgramSequenceLabels();
   });
 
   // Handle form submit
@@ -209,7 +241,8 @@ async function init() {
     const pwRecords = workouts.map(w => ({
       program_id: programId,
       workout_id: w.workout_id,
-      order_index: w.order_index
+      order_index: w.order_index,
+      day_label: w.day_label
     }));
     const { error: pwErr } = await db.from('program_workouts').insert(pwRecords);
     if (pwErr) { showAlert('Failed to save program workouts: ' + pwErr.message, 'danger'); return; }

@@ -7,6 +7,86 @@ const fcScript = document.createElement('script');
 fcScript.src = 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js';
 document.head.appendChild(fcScript);
 
+const AUTO_WORKOUT_PROGRAM_PREFIX = '__auto_workout__:';
+const LEGACY_AUTO_WORKOUT_PREFIX = 'quick:';
+
+function cleanDisplayName(value, fallback = 'Program') {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  return raw
+    .replace(new RegExp(`^${AUTO_WORKOUT_PROGRAM_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i'), '')
+    .replace(new RegExp(`^${LEGACY_AUTO_WORKOUT_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i'), '')
+    .trim() || fallback;
+}
+
+function toIsoDateString(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return null;
+}
+
+function diffIsoDates(dateStrA, dateStrB) {
+  const a = new Date(`${dateStrA}T00:00:00`);
+  const b = new Date(`${dateStrB}T00:00:00`);
+  return Math.round((a - b) / 86400000);
+}
+
+function buildDayIndexByScheduleId(schedules) {
+  const programDates = new Map();
+  for (const schedule of schedules || []) {
+    const programId = schedule?.program_id;
+    const dateStr = toIsoDateString(schedule?.scheduled_date);
+    if (!programId || !dateStr) continue;
+    if (!programDates.has(programId)) programDates.set(programId, new Set());
+    programDates.get(programId).add(dateStr);
+  }
+
+  const programDateIndex = new Map();
+  for (const [programId, dateSet] of programDates.entries()) {
+    const sortedDates = Array.from(dateSet).sort();
+    let lastDate = null;
+    let dayIndex = 0;
+    for (const dateStr of sortedDates) {
+      if (lastDate && diffIsoDates(dateStr, lastDate) === 1) {
+        dayIndex += 1;
+      } else {
+        dayIndex = 0;
+      }
+      programDateIndex.set(`${programId}|${dateStr}`, dayIndex);
+      lastDate = dateStr;
+    }
+  }
+
+  const scheduleIndex = new Map();
+  for (const schedule of schedules || []) {
+    const programId = schedule?.program_id;
+    const dateStr = toIsoDateString(schedule?.scheduled_date);
+    if (!programId || !dateStr || !schedule?.id) continue;
+    const key = `${programId}|${dateStr}`;
+    if (programDateIndex.has(key)) {
+      scheduleIndex.set(String(schedule.id), programDateIndex.get(key));
+    }
+  }
+
+  return scheduleIndex;
+}
+
+function normalizeProgramWorkoutList(items) {
+  return (items || [])
+    .slice()
+    .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+}
+
+function buildProgramEventTitle(programName, workoutItems, dayIndex) {
+  if (!Array.isArray(workoutItems) || workoutItems.length === 0) return programName;
+  const safeIndex = Number.isInteger(dayIndex) ? dayIndex : 0;
+  const item = workoutItems[safeIndex] || workoutItems[0];
+  const dayLabel = item?.day_label || `Day ${safeIndex + 1}`;
+  const workoutName = item?.workout?.name || 'Workout';
+  return `${programName} — ${dayLabel}: ${workoutName}`;
+}
+
 fcScript.onload = async function() {
   // get athlete id from query or from session -> athletes table
   const params = new URLSearchParams(location.search);
@@ -49,7 +129,33 @@ fcScript.onload = async function() {
     return;
   }
 
-  const events = (sched || []).map(s => ({ id: s.id, title: s.programs?.name || 'Program', start: s.scheduled_date, allDay: true, extendedProps: { programId: s.program_id } }));
+  const scheduleRows = sched || [];
+  const programIds = Array.from(new Set(scheduleRows.map(s => s.program_id).filter(Boolean)));
+  let programDetails = [];
+  if (programIds.length) {
+    const { data } = await window.sb
+      .from('programs')
+      .select('id, name, program_workouts (order_index, day_label, workout:workouts (id, name))')
+      .in('id', programIds);
+    programDetails = data || [];
+  }
+  const programWorkoutsMap = new Map(
+    programDetails.map(p => [p.id, normalizeProgramWorkoutList(p.program_workouts || [])])
+  );
+  const dayIndexMap = buildDayIndexByScheduleId(scheduleRows);
+
+  const events = scheduleRows.map(s => {
+    const programName = cleanDisplayName(s.programs?.name || 'Program', 'Program');
+    const workoutItems = programWorkoutsMap.get(s.program_id) || [];
+    const dayIndex = dayIndexMap.get(String(s.id));
+    return {
+      id: s.id,
+      title: buildProgramEventTitle(programName, workoutItems, dayIndex),
+      start: s.scheduled_date,
+      allDay: true,
+      extendedProps: { programId: s.program_id, scheduleId: s.id, dayIndex: dayIndex }
+    };
+  });
 
   const calEl = document.getElementById('calendarContainer');
   const calendar = new window.FullCalendar.Calendar(calEl, {
