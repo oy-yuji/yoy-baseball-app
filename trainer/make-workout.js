@@ -12,18 +12,52 @@ async function loadExercises() {
 
 function createExercisePicker() {
   return (`
-    <div class="exercise-picker" style="width:340px;max-width:100%;">
-      <input
-        type="text"
-        class="form-control form-control-sm exercise-filter mb-1"
-        placeholder="Filter exercises..."
-      >
-      <select class="form-select form-select-sm exercise-select" size="8"></select>
+    <div class="exercise-picker border rounded p-2" style="width:340px;max-width:100%;">
+      <div class="d-flex align-items-center justify-content-between gap-2">
+        <span class="exercise-summary small text-muted">No exercise selected</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary toggle-exercise-picker" aria-expanded="false">Choose</button>
+      </div>
+      <div class="exercise-picker-body d-none mt-2">
+        <input
+          type="text"
+          class="form-control form-control-sm exercise-filter mb-1"
+          placeholder="Filter exercises..."
+        >
+        <select class="form-select form-select-sm exercise-select" size="7"></select>
+      </div>
     </div>
   `);
 }
 
 function makeExerciseOption(e) { return `<option value="${e.id}">${e.name}</option>` }
+
+function getExerciseNameById(exerciseId) {
+  const id = String(exerciseId || '');
+  if (!id) return '';
+  const match = allExercises.find((e) => String(e.id) === id);
+  return match ? String(match.name || '') : '';
+}
+
+function updateExerciseSummary(row) {
+  const summaryEl = row.querySelector('.exercise-summary');
+  const exerciseSelect = row.querySelector('.exercise-select');
+  if (!summaryEl || !exerciseSelect) return;
+
+  const selectedId = exerciseSelect.value;
+  const selectedName = getExerciseNameById(selectedId);
+  summaryEl.textContent = selectedName || 'No exercise selected';
+  summaryEl.classList.toggle('text-muted', !selectedName);
+}
+
+function setExercisePickerExpanded(row, expanded) {
+  const body = row.querySelector('.exercise-picker-body');
+  const toggleBtn = row.querySelector('.toggle-exercise-picker');
+  if (!body || !toggleBtn) return;
+
+  body.classList.toggle('d-none', !expanded);
+  toggleBtn.textContent = expanded ? 'Hide' : 'Choose';
+  toggleBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
 
 function renderExerciseOptions(selectEl, filterText = '', selectedValue = '') {
   if (!selectEl) return;
@@ -109,6 +143,10 @@ function seedRowFromSource(row, sourceRow) {
   const exerciseSelect = row.querySelector('.exercise-select');
   if (filterInput) filterInput.value = sourceFilter;
   renderExerciseOptions(exerciseSelect, sourceFilter, sourceExerciseId);
+  updateExerciseSummary(row);
+
+  const sourceExpanded = !sourceRow.querySelector('.exercise-picker-body')?.classList.contains('d-none');
+  setExercisePickerExpanded(row, sourceExpanded);
 
   const sourceSets = sourceRow.querySelector('.sets-input')?.value || '';
   const sourceRest = sourceRow.querySelector('.rest-input')?.value || '';
@@ -152,14 +190,34 @@ function buildRow() {
   // wire events
   const filterInput = row.querySelector('.exercise-filter');
   const exerciseSelect = row.querySelector('.exercise-select');
+  const togglePickerBtn = row.querySelector('.toggle-exercise-picker');
   const removeBtn = row.querySelector('.remove-row');
   const supersetBtn = row.querySelector('.make-superset');
 
   renderExerciseOptions(exerciseSelect, '', '');
+  updateExerciseSummary(row);
+  setExercisePickerExpanded(row, false);
+
+  if (togglePickerBtn) {
+    togglePickerBtn.addEventListener('click', () => {
+      const isExpanded = togglePickerBtn.getAttribute('aria-expanded') === 'true';
+      setExercisePickerExpanded(row, !isExpanded);
+      if (!isExpanded) {
+        (filterInput || exerciseSelect)?.focus();
+      }
+    });
+  }
 
   if (filterInput) {
     filterInput.addEventListener('input', () => {
       renderExerciseOptions(exerciseSelect, filterInput.value, exerciseSelect.value);
+      updateExerciseSummary(row);
+    });
+  }
+
+  if (exerciseSelect) {
+    exerciseSelect.addEventListener('change', () => {
+      updateExerciseSummary(row);
     });
   }
 
