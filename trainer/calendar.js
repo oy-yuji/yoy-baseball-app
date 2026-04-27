@@ -115,6 +115,12 @@ function toIsoDateString(value) {
   return null;
 }
 
+function cleanDisplayName(value, fallback = 'Program') {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  return raw.replace(/^quick:\s*/i, '').trim() || fallback;
+}
+
 // Wait for FullCalendar to load
 calendarScript.onload = async function() {
   // Get athlete id from URL
@@ -232,7 +238,7 @@ calendarScript.onload = async function() {
     programList.innerHTML = filtered.length
       ? filtered.map((p) =>
         `<div class="program-draggable external-draggable list-group-item mb-2 calendar-program-chip" data-block-type="program" data-program-id="${p.id}">
-          <strong>${escapeHtml(p.name)}</strong>
+          <strong>${escapeHtml(cleanDisplayName(p.name, 'Program'))}</strong>
         </div>`
       ).join('')
       : '<div class="small text-muted">No matching programs.</div>';
@@ -355,7 +361,7 @@ calendarScript.onload = async function() {
   }
 
   async function createQuickProgramFromWorkout(workoutId, workoutName) {
-    const quickProgramName = `Quick: ${workoutName || 'Workout'}`;
+    const quickProgramName = cleanDisplayName(workoutName, 'Workout');
     const { data: pData, error: pErr } = await window.sb
       .from('programs')
       .insert({ created_by: trainerId, name: quickProgramName })
@@ -430,10 +436,10 @@ calendarScript.onload = async function() {
       let programId = block.programId || null;
       try {
         if (blockType === 'workout') {
-          const sourceName = (info.draggedEl?.querySelector('.fw-semibold')?.textContent || info.event.title || 'Workout').trim();
+          const sourceName = cleanDisplayName(info.draggedEl?.querySelector('.fw-semibold')?.textContent || info.event.title || 'Workout', 'Workout');
           const quick = await createQuickProgramFromWorkout(block.workoutId, sourceName);
           programId = quick.programId;
-          info.event.setProp('title', quick.title);
+          info.event.setProp('title', sourceName);
         }
       } catch (createErr) {
         showPageNotice(`Failed to prepare schedule: ${createErr.message}`);
@@ -449,7 +455,9 @@ calendarScript.onload = async function() {
         // store DB schedule id on the event for future updates/deletes
         try { info.event.setExtendedProp('scheduleId', insertData.id); } catch (e) { info.event.setExtendedProp && info.event.setExtendedProp('scheduleId', insertData.id); }
         if (!info.event.title || info.event.title === 'Program') {
-          info.event.setProp('title', (info.draggedEl?.textContent || 'Program').trim());
+          info.event.setProp('title', cleanDisplayName(info.draggedEl?.textContent || 'Program', 'Program'));
+        } else {
+          info.event.setProp('title', cleanDisplayName(info.event.title, 'Program'));
         }
         try { info.event.setExtendedProp('programId', programId); } catch (e) {}
       }
