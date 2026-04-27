@@ -25,7 +25,7 @@
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
           <h1 class="h3 mb-1">Manage Workouts</h1>
-          <p class="text-muted mb-0">Reorder exercises inside a workout, or delete workouts you no longer need.</p>
+          <p class="text-muted mb-0">Drag to reorder exercises, edit sets/reps/rest, or delete workouts you no longer need.</p>
         </div>
         <a href="dashboard.html" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
           <i class="bi bi-arrow-left" aria-hidden="true"></i>
@@ -34,10 +34,25 @@
       </div>
 
       <div id="pageAlert"></div>
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <label for="workoutSearchInput" class="form-label mb-1">Search Workouts</label>
+          <input
+            id="workoutSearchInput"
+            type="search"
+            class="form-control"
+            placeholder="Type to filter by workout name, category, exercise name, reps, sets, or rest"
+            autocomplete="off"
+          />
+          <div id="workoutSearchMeta" class="small text-muted mt-2"></div>
+        </div>
+      </div>
       <div id="workoutsContainer" class="vstack gap-3"></div>
+      <div id="workoutSearchEmpty" class="alert alert-info d-none mt-3 mb-0">No workouts match your search.</div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <script src="../js/supabase.js"></script>
     <script src="manage-workouts.js"></script>
   </body>
