@@ -225,14 +225,23 @@ function renderSchedule(items) {
 		return;
 	}
 
-	container.innerHTML = items
+	const headerItem = items[0];
+	const headerDay = escapeHtml(headerItem.dayLabel || 'Day');
+	const headerProgram = escapeHtml(headerItem.programName || 'Program');
+	const headerWorkout = escapeHtml(headerItem.workoutName || 'Workout');
+	const headerLine = `${headerDay} - ${headerProgram} - ${headerWorkout}`;
+
+	const headerHtml = `
+		<div class="text-center fw-semibold fs-4 mb-4">${headerLine}</div>
+	`;
+
+	container.innerHTML = headerHtml + items
 		.map((item, index) => {
 			const safeKey = `${index}`;
 			const prescribedSets = item.prescribedSets ?? '-';
 			const prescribedReps = item.prescribedReps ?? '-';
 			const prescribedRest = item.prescribedRest ?? '-';
 			const safeExerciseName = escapeHtml(item.exerciseName);
-			const safeProgramLine = escapeHtml(`${item.programName} • ${item.dayLabel || item.workoutName}`);
 			const safeNotes = escapeHtml(item.notes || '');
 			const exerciseTitle = item.demoVideoUrl
 				? `<a href="${item.demoVideoUrl}" target="_blank" rel="noopener noreferrer" class="link-primary text-decoration-underline">${safeExerciseName}</a>`
@@ -246,15 +255,15 @@ function renderSchedule(items) {
 				const setNo = rowIndex + 1;
 				return `
 					<tr>
-						<td class="small">Set ${setNo}</td>
+						<td class="fw-semibold">Set ${setNo}</td>
 						<td>
-							<input id="reps-${safeKey}-${setNo}" class="form-control form-control-sm" type="text" />
+							<input id="reps-${safeKey}-${setNo}" class="form-control form-control-lg" type="text" />
 						</td>
 						${allowWeightInput
-							? `<td><input id="weight-${safeKey}-${setNo}" class="form-control form-control-sm" type="number" min="0" step="0.5" /></td>`
+							? `<td><input id="weight-${safeKey}-${setNo}" class="form-control form-control-lg" type="number" min="0" step="0.5" /></td>`
 							: ''}
 						<td>
-							<input id="rest-${safeKey}-${setNo}" class="form-control form-control-sm" type="number" min="0" step="1" />
+							<input id="rest-${safeKey}-${setNo}" class="form-control form-control-lg" type="number" min="0" step="1" />
 						</td>
 					</tr>
 				`;
@@ -265,14 +274,13 @@ function renderSchedule(items) {
 					<div class="card-body">
 						<div class="d-flex justify-content-between align-items-start gap-2 mb-2">
 							<div>
-								<h5 class="card-title mb-1 fw-semibold">${exerciseTitle}</h5>
-								<div class="small text-muted">${safeProgramLine}</div>
+								<h5 class="card-title mb-1 fw-semibold fs-4">${exerciseTitle}</h5>
 								${item.demoVideoUrl ? '<div class="small mt-1"><span class="badge rounded-pill text-bg-info">Video available</span></div>' : ''}
 							</div>
 							<span class="badge text-bg-light">${titleCategory(item.category)}</span>
 						</div>
 
-						<div class="small mb-3 text-secondary">
+						<div class="fs-5 mb-3 text-secondary">
 							<strong>Assigned:</strong> ${prescribedSets} sets • ${prescribedReps} reps • ${prescribedRest}s rest
 						</div>
 
@@ -282,7 +290,7 @@ function renderSchedule(items) {
 						</div>
 
 						<div class="table-responsive">
-							<table class="table table-sm align-middle mb-0 table-hover">
+							<table class="table table-sm align-middle mb-0 table-hover fs-6">
 								<thead>
 									<tr>
 										<th>Set</th>

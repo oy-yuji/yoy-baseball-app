@@ -1,6 +1,8 @@
 const db = window.sb;
 let athleteId = '';
 let currentDate = new Date();
+let athleteNav = [];
+let athleteNavIndex = -1;
 
 function toLocalDateString(date) {
 	const year = date.getFullYear();
@@ -32,6 +34,84 @@ function showAlert(message, type = 'danger') {
 	const container = document.getElementById('pageAlert');
 	if (!container) return;
 	container.innerHTML = `<div class="alert alert-${type} mb-0">${message}</div>`;
+}
+
+function normalizeSortName(value) {
+	return String(value || '').toLowerCase().trim();
+}
+
+function updateAthleteNavButtons() {
+	const prevBtn = document.getElementById('prevAthleteBtn');
+	const nextBtn = document.getElementById('nextAthleteBtn');
+	if (!prevBtn || !nextBtn) return;
+	const hasPrev = athleteNavIndex > 0;
+	const hasNext = athleteNavIndex >= 0 && athleteNavIndex < athleteNav.length - 1;
+	prevBtn.disabled = !hasPrev;
+	nextBtn.disabled = !hasNext;
+	prevBtn.title = hasPrev ? `Previous athlete: ${athleteNav[athleteNavIndex - 1].name}` : 'Previous athlete';
+	nextBtn.title = hasNext ? `Next athlete: ${athleteNav[athleteNavIndex + 1].name}` : 'Next athlete';
+}
+
+async function loadAthleteNavigation() {
+	const prevBtn = document.getElementById('prevAthleteBtn');
+	const nextBtn = document.getElementById('nextAthleteBtn');
+	if (!prevBtn || !nextBtn) return;
+
+	const { data: sessionData, error: sessionError } = await db.auth.getSession();
+	if (sessionError || !sessionData?.session?.user?.id) return;
+
+	const trainerId = sessionData.session.user.id;
+	let resp = await db
+		.from('athletes')
+		.select('id, users(full_name, email)')
+		.eq('trainer_id', trainerId);
+
+	if (resp.error) {
+		console.error('Failed to load athlete navigation:', resp.error);
+		return;
+	}
+
+	let athletes = resp.data || [];
+	if (!athletes.length) return;
+
+	if (!athletes[0]?.users) {
+		const ids = athletes.map((a) => a.id).filter(Boolean);
+		if (ids.length) {
+			const usersResp = await db.from('users').select('id, full_name, email').in('id', ids);
+			if (!usersResp.error && usersResp.data) {
+				const usersById = {};
+				usersResp.data.forEach((u) => { usersById[u.id] = u; });
+				athletes = athletes.map((a) => ({
+					id: a.id,
+					users: usersById[a.id] || {}
+				}));
+			}
+		}
+	}
+
+	athleteNav = athletes
+		.map((a) => ({
+			id: a.id,
+			name: a.users?.full_name || a.users?.email || 'Athlete'
+		}))
+		.sort((a, b) => normalizeSortName(a.name).localeCompare(normalizeSortName(b.name)));
+
+	athleteNavIndex = athleteNav.findIndex((a) => a.id === athleteId);
+	updateAthleteNavButtons();
+
+	prevBtn.addEventListener('click', () => {
+		if (athleteNavIndex <= 0) return;
+		const target = athleteNav[athleteNavIndex - 1];
+		if (!target) return;
+		location.href = `athlete-detail.html?id=${encodeURIComponent(target.id)}`;
+	});
+
+	nextBtn.addEventListener('click', () => {
+		if (athleteNavIndex < 0 || athleteNavIndex >= athleteNav.length - 1) return;
+		const target = athleteNav[athleteNavIndex + 1];
+		if (!target) return;
+		location.href = `athlete-detail.html?id=${encodeURIComponent(target.id)}`;
+	});
 }
 
 function normalizeCategory(category) {
@@ -401,6 +481,7 @@ async function initAthleteDetailPage() {
 	}
 
 	await loadAthleteHeader();
+	await loadAthleteNavigation();
 
 	const prevDayBtn = document.getElementById('prevDayBtn');
 	const todayBtn = document.getElementById('todayBtn');
