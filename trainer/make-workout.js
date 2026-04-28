@@ -289,9 +289,11 @@ async function init() {
     e.preventDefault();
     const nameInput = workoutForm.querySelector('#workoutName');
     const categoryInput = workoutForm.querySelector('#workoutCategory');
+    const notesInput = workoutForm.querySelector('#workoutNotes');
     if (!nameInput || !categoryInput) { showAlert('Form inputs missing from the page', 'danger'); return; }
     const name = nameInput.value.trim();
     const category = (categoryInput.value || 'other').trim().toLowerCase();
+    const notes = notesInput ? notesInput.value.trim() : '';
     if (!name) { showAlert('Please enter a workout name', 'danger'); return; }
 
     // get session for trainer id
@@ -321,7 +323,7 @@ async function init() {
     }
 
     // insert workout
-    const insertPayload = { created_by: trainerId, name, category };
+    const insertPayload = { created_by: trainerId, name, category, notes };
     const resp = await db.from('workouts').insert(insertPayload).select('id');
     console.log('workouts insert response:', resp);
     const wErr = resp.error; const wData = resp.data && resp.data[0];

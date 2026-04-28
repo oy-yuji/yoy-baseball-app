@@ -236,18 +236,19 @@ function buildDayIndexByScheduleId(schedules) {
   return scheduleIndex;
 }
 
-function buildProgramEventTitle(programName, workoutItems, dayIndex) {
+function buildProgramEventTitle(programName, workoutItems, dayIndex, isAutoProgram = false) {
   if (!Array.isArray(workoutItems) || workoutItems.length === 0) return programName;
   const safeIndex = Number.isInteger(dayIndex) ? dayIndex : 0;
   const item = workoutItems[safeIndex] || workoutItems[0];
-  const dayLabel = item?.day_label || `Day ${safeIndex + 1}`;
   const workoutName = item?.workout?.name || 'Workout';
+  if (isAutoProgram) return workoutName;
+  const dayLabel = item?.day_label || `Day ${safeIndex + 1}`;
   return `${programName} — ${dayLabel}: ${workoutName}`;
 }
 
 async function loadProgramSummary(programId, fallbackName) {
   if (!programId) {
-    return { name: cleanDisplayName(fallbackName || 'Program', 'Program'), workouts: [] };
+    return { name: cleanDisplayName(fallbackName || 'Program', 'Program'), workouts: [], isAuto: false };
   }
   const { data, error } = await window.sb
     .from('programs')
@@ -256,12 +257,13 @@ async function loadProgramSummary(programId, fallbackName) {
     .single();
 
   if (error || !data) {
-    return { name: cleanDisplayName(fallbackName || 'Program', 'Program'), workouts: [] };
+    return { name: cleanDisplayName(fallbackName || 'Program', 'Program'), workouts: [], isAuto: false };
   }
 
   return {
     name: cleanDisplayName(data.name || fallbackName || 'Program', 'Program'),
-    workouts: normalizeProgramWorkoutList(data.program_workouts || [])
+    workouts: normalizeProgramWorkoutList(data.program_workouts || []),
+    isAuto: isAutoWorkoutProgramName(data.name)
   };
 }
 
@@ -575,9 +577,10 @@ calendarScript.onload = async function() {
     const programName = cleanDisplayName(s.programs?.name || 'Program', 'Program');
     const workoutItems = programWorkoutsMap.get(s.program_id) || [];
     const dayIndex = dayIndexMap.get(String(s.id));
+    const isAuto = isAutoWorkoutProgramName(s.programs?.name || '');
     return {
       id: s.id,
-      title: buildProgramEventTitle(programName, workoutItems, dayIndex),
+      title: buildProgramEventTitle(programName, workoutItems, dayIndex, isAuto),
       start: s.scheduled_date,
       extendedProps: {
         programId: s.program_id,
@@ -665,7 +668,7 @@ calendarScript.onload = async function() {
         const scheduleId = insertedByDate.get(eventDate);
         calendar.addEvent({
           id: scheduleId || undefined,
-          title: buildProgramEventTitle(summary.name, workoutItems, idx),
+          title: buildProgramEventTitle(summary.name, workoutItems, idx, summary.isAuto),
           start: eventDate,
           allDay: true,
           extendedProps: {

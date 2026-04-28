@@ -191,6 +191,7 @@ function flattenSchedule(scheduleRows, dayIndexMap) {
 					programName: program?.name || 'Program',
 					dayLabel: programWorkout.day_label || '',
 					workoutName: workout?.name || 'Workout',
+					workoutNotes: (workout?.notes || '').toString().trim(),
 					exerciseId: exercise.id,
 					exerciseName: exercise.name || 'Exercise',
 					demoVideoUrl: normalizeVideoUrl(exercise.demo_video_url),
@@ -530,6 +531,7 @@ async function loadScheduleForCurrentDate() {
 					workout:workouts (
 						id,
 						name,
+						notes,
 						workout_exercises (
 							order_index,
 							sets,
