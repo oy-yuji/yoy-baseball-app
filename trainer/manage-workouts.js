@@ -65,6 +65,7 @@ function buildExerciseRow(ex, idx, total) {
   const reps = escapeHtml(ex.reps || '');
   const sets = Number.isFinite(Number(ex.sets)) ? Number(ex.sets) : '';
   const rest = Number.isFinite(Number(ex.rest_seconds)) ? Number(ex.rest_seconds) : '';
+  const workoutNotes = escapeHtml(ex.notes || '');
   return `
     <li class="list-group-item workout-ex-row" data-row-id="${ex.id}" data-exercise-id="${exerciseId}">
       <div class="d-flex justify-content-between align-items-start gap-2">
@@ -98,6 +99,10 @@ function buildExerciseRow(ex, idx, total) {
             <div class="col-12 col-sm-4">
               <label class="form-label form-label-sm mb-1">Rest (sec)</label>
               <input type="number" min="0" step="1" class="form-control form-control-sm rest-edit" value="${rest}" />
+            </div>
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-1">Workout Notes</label>
+              <textarea class="form-control form-control-sm workout-notes-edit" rows="2" placeholder="Notes for this exercise">${workoutNotes}</textarea>
             </div>
           </div>
         </div>
@@ -167,6 +172,7 @@ function updateCardSearchIndex(card) {
     parts.push(row.querySelector('.sets-edit')?.value || '');
     parts.push(row.querySelector('.reps-edit')?.value || '');
     parts.push(row.querySelector('.rest-edit')?.value || '');
+    parts.push(row.querySelector('.workout-notes-edit')?.value || '');
   });
 
   card.dataset.searchIndex = normalizeSearchText(parts.join(' '));
@@ -235,6 +241,7 @@ async function saveExerciseOrder(card) {
       const setsValue = rows[i].querySelector('.sets-edit')?.value?.trim() || '';
       const repsValue = rows[i].querySelector('.reps-edit')?.value ?? '';
       const restValue = rows[i].querySelector('.rest-edit')?.value?.trim() || '';
+      const notesValue = rows[i].querySelector('.workout-notes-edit')?.value?.trim() || '';
       const exerciseName = rows[i].querySelector('.exercise-name-edit')?.value?.trim() || '';
       const rawCategory = (rows[i].querySelector('.exercise-category-edit')?.value || 'other').trim().toLowerCase();
       const exerciseCategory = rawCategory === 'plyometric' ? 'hybrid' : rawCategory;
@@ -275,7 +282,8 @@ async function saveExerciseOrder(card) {
           order_index: i,
           sets: parsedSets,
           reps: repsValue,
-          rest_seconds: parsedRest
+          rest_seconds: parsedRest,
+          notes: notesValue || null
         })
         .eq('id', rowId);
       if (error) throw error;
@@ -360,6 +368,7 @@ async function loadWorkouts() {
         order_index,
         sets,
         reps,
+        notes,
         rest_seconds,
         exercise:exercises (
           id,

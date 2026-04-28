@@ -150,8 +150,11 @@ function seedRowFromSource(row, sourceRow) {
 
   const sourceSets = sourceRow.querySelector('.sets-input')?.value || '';
   const sourceRest = sourceRow.querySelector('.rest-input')?.value || '';
+  const sourceNotes = sourceRow.querySelector('.workout-notes-input')?.value || '';
   row.querySelector('.sets-input').value = sourceSets;
   row.querySelector('.rest-input').value = sourceRest;
+  const notesInput = row.querySelector('.workout-notes-input');
+  if (notesInput) notesInput.value = sourceNotes;
 }
 
 function createSupersetPartner(sourceRow, container) {
@@ -182,6 +185,7 @@ function buildRow() {
     <input type="number" class="form-control form-control-sm sets-input" placeholder="Sets" min="1" style="width:80px">
     <input type="text" class="form-control form-control-sm reps-input" placeholder="Reps" style="width:100px">
     <input type="number" class="form-control form-control-sm rest-input" placeholder="Rest(s)" min="0" style="width:100px">
+    <textarea class="form-control form-control-sm workout-notes-input" placeholder="Exercise notes" rows="2" style="min-width:220px;flex:1;"></textarea>
     <span class="badge text-bg-info superset-badge d-none"></span>
     <button type="button" class="btn btn-sm btn-outline-secondary make-superset">+ Superset</button>
     <button class="btn btn-sm btn-outline-danger remove-row">Remove</button>
@@ -289,11 +293,9 @@ async function init() {
     e.preventDefault();
     const nameInput = workoutForm.querySelector('#workoutName');
     const categoryInput = workoutForm.querySelector('#workoutCategory');
-    const notesInput = workoutForm.querySelector('#workoutNotes');
     if (!nameInput || !categoryInput) { showAlert('Form inputs missing from the page', 'danger'); return; }
     const name = nameInput.value.trim();
     const category = (categoryInput.value || 'other').trim().toLowerCase();
-    const notes = notesInput ? notesInput.value.trim() : '';
     if (!name) { showAlert('Please enter a workout name', 'danger'); return; }
 
     // get session for trainer id
@@ -315,15 +317,16 @@ async function init() {
       const exerciseId = r.querySelector('.exercise-select').value;
       const sets = parseInt(r.querySelector('.sets-input').value || '0');
       const repsInput = (r.querySelector('.reps-input').value || '').trim();
+      const notes = (r.querySelector('.workout-notes-input')?.value || '').trim();
       const supersetLabel = r.dataset.superset || '';
       const reps = supersetLabel ? `[SS ${supersetLabel}] ${repsInput}`.trim() : repsInput;
       const rest = parseInt(r.querySelector('.rest-input').value || '0');
       if (!exerciseId) { showAlert('Please select an exercise for each row', 'danger'); return; }
-      weRecords.push({ exercise_id: exerciseId, sets, reps, rest_seconds: rest, order_index: i });
+      weRecords.push({ exercise_id: exerciseId, sets, reps, rest_seconds: rest, notes, order_index: i });
     }
 
     // insert workout
-    const insertPayload = { created_by: trainerId, name, category, notes };
+    const insertPayload = { created_by: trainerId, name, category };
     const resp = await db.from('workouts').insert(insertPayload).select('id');
     console.log('workouts insert response:', resp);
     const wErr = resp.error; const wData = resp.data && resp.data[0];

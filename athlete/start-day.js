@@ -2,6 +2,9 @@ const db = window.sb;
 let currentDate = new Date();
 let activeAthleteId = null;
 
+const AUTO_WORKOUT_PROGRAM_PREFIX = '__auto_workout__:';
+const LEGACY_AUTO_WORKOUT_PREFIX = 'quick:';
+
 function showAlert(message, type = 'success') {
 	const el = document.getElementById('pageAlert');
 	if (!el) return;
@@ -48,6 +51,9 @@ function renderDateLabel() {
 
 	const todayBtn = document.getElementById('todayBtn');
 	if (todayBtn) todayBtn.disabled = isSameDay(currentDate, new Date());
+
+	const datePicker = document.getElementById('datePicker');
+	if (datePicker) datePicker.value = toDateString(currentDate);
 }
 
 function normalizeCategory(category) {
@@ -67,6 +73,19 @@ function escapeHtml(value) {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#39;');
+}
+
+function cleanProgramName(value, fallback = 'Program') {
+	const raw = String(value || '').trim();
+	if (!raw) return fallback;
+	return raw
+		.replace(new RegExp(`^${AUTO_WORKOUT_PROGRAM_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*`, 'i'), '')
+		.replace(new RegExp(`^${LEGACY_AUTO_WORKOUT_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*`, 'i'), '')
+		.trim() || fallback;
+}
+
+function isAutoWorkoutProgramName(value) {
+	return String(value || '').trim().toLowerCase().startsWith(AUTO_WORKOUT_PROGRAM_PREFIX);
 }
 
 function normalizeVideoUrl(url) {
@@ -192,6 +211,7 @@ function flattenSchedule(scheduleRows, dayIndexMap) {
 					dayLabel: programWorkout.day_label || '',
 					workoutName: workout?.name || 'Workout',
 					workoutNotes: (workout?.notes || '').toString().trim(),
+					workoutExerciseNotes: (workoutExercise?.notes || '').toString().trim(),
 					exerciseId: exercise.id,
 					exerciseName: exercise.name || 'Exercise',
 					demoVideoUrl: normalizeVideoUrl(exercise.demo_video_url),
@@ -228,9 +248,12 @@ function renderSchedule(items) {
 
 	const headerItem = items[0];
 	const headerDay = escapeHtml(headerItem.dayLabel || 'Day');
-	const headerProgram = escapeHtml(headerItem.programName || 'Program');
 	const headerWorkout = escapeHtml(headerItem.workoutName || 'Workout');
-	const headerLine = `${headerDay} - ${headerProgram} - ${headerWorkout}`;
+	const headerProgramName = cleanProgramName(headerItem.programName || 'Program', 'Program');
+	const isAutoProgram = isAutoWorkoutProgramName(headerItem.programName || '');
+	const headerLine = isAutoProgram
+		? `${headerWorkout}`
+		: `${headerDay} - ${escapeHtml(headerProgramName)} - ${headerWorkout}`;
 
 	const headerHtml = `
 		<div class="text-center fw-semibold fs-4 mb-4">${headerLine}</div>
@@ -244,6 +267,7 @@ function renderSchedule(items) {
 			const prescribedRest = item.prescribedRest ?? '-';
 			const safeExerciseName = escapeHtml(item.exerciseName);
 			const safeNotes = escapeHtml(item.notes || '');
+			const safeWorkoutExerciseNotes = escapeHtml(item.workoutExerciseNotes || '');
 			const exerciseTitle = item.demoVideoUrl
 				? `<a href="${item.demoVideoUrl}" target="_blank" rel="noopener noreferrer" class="link-primary text-decoration-underline">${safeExerciseName}</a>`
 				: safeExerciseName;
@@ -289,6 +313,13 @@ function renderSchedule(items) {
 							<strong>Notes:</strong>
 							<div class="mt-1 p-2 rounded border ${safeNotes ? '' : 'text-muted'}">${safeNotes || 'No notes provided for this exercise.'}</div>
 						</div>
+
+						${safeWorkoutExerciseNotes ? `
+							<div class="small mb-3">
+								<strong>Workout Notes:</strong>
+								<div class="mt-1 p-2 rounded border">${safeWorkoutExerciseNotes}</div>
+							</div>
+						` : ''}
 
 						<div class="table-responsive">
 							<table class="table table-sm align-middle mb-0 table-hover fs-6">
@@ -536,6 +567,7 @@ async function loadScheduleForCurrentDate() {
 							order_index,
 							sets,
 							reps,
+							notes,
 							rest_seconds,
 							exercise:exercises (
 								id,
@@ -590,6 +622,7 @@ async function initStartDay() {
 	const prevDayBtn = document.getElementById('prevDayBtn');
 	const todayBtn = document.getElementById('todayBtn');
 	const nextDayBtn = document.getElementById('nextDayBtn');
+	const datePicker = document.getElementById('datePicker');
 
 	if (prevDayBtn) {
 		prevDayBtn.addEventListener('click', async () => {
@@ -608,6 +641,14 @@ async function initStartDay() {
 	if (todayBtn) {
 		todayBtn.addEventListener('click', async () => {
 			currentDate = new Date();
+			await loadScheduleForCurrentDate();
+		});
+	}
+
+	if (datePicker) {
+		datePicker.addEventListener('change', async () => {
+			if (!datePicker.value) return;
+			currentDate = new Date(`${datePicker.value}T00:00:00`);
 			await loadScheduleForCurrentDate();
 		});
 	}
