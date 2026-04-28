@@ -66,6 +66,52 @@ function titleCategory(category) {
 	return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+const WORKOUT_COLOR_PALETTE = {
+	blue: { solid: '#2563eb', soft: '#dbeafe', border: '#93c5fd', text: '#ffffff' },
+	green: { solid: '#16a34a', soft: '#dcfce7', border: '#86efac', text: '#ffffff' },
+	amber: { solid: '#d97706', soft: '#fef3c7', border: '#fcd34d', text: '#1f2937' },
+	red: { solid: '#dc2626', soft: '#fee2e2', border: '#fecaca', text: '#ffffff' },
+	purple: { solid: '#7c3aed', soft: '#ede9fe', border: '#c4b5fd', text: '#ffffff' },
+	teal: { solid: '#0d9488', soft: '#ccfbf1', border: '#5eead4', text: '#ffffff' },
+	pink: { solid: '#db2777', soft: '#fce7f3', border: '#f9a8d4', text: '#ffffff' },
+	slate: { solid: '#475569', soft: '#e2e8f0', border: '#cbd5e1', text: '#ffffff' }
+};
+
+const CATEGORY_COLOR_KEYS = {
+	warmup: 'amber',
+	upper: 'blue',
+	lower: 'green',
+	pitching: 'purple',
+	hitting: 'red',
+	conditioning: 'teal',
+	hybrid: 'pink',
+	other: 'slate'
+};
+
+const COLOR_KEYS = Object.keys(WORKOUT_COLOR_PALETTE);
+
+function hashToIndex(value, modulo) {
+	const str = String(value || '');
+	let hash = 0;
+	for (let i = 0; i < str.length; i += 1) {
+		hash = (hash * 31 + str.charCodeAt(i)) | 0;
+	}
+	return Math.abs(hash) % modulo;
+}
+
+function resolveColorKey(category, seed) {
+	const seedValue = String(seed || '').trim();
+	if (seedValue) return COLOR_KEYS[hashToIndex(seedValue, COLOR_KEYS.length)];
+	const normalized = normalizeCategory(category);
+	return CATEGORY_COLOR_KEYS[normalized] || 'slate';
+}
+
+function getWorkoutColorMeta(workoutCategory, workoutName, workoutId, fallbackName) {
+	const seed = workoutName || fallbackName || workoutId || workoutCategory || '';
+	const key = resolveColorKey(workoutCategory, seed);
+	return WORKOUT_COLOR_PALETTE[key] || WORKOUT_COLOR_PALETTE.slate;
+}
+
 function escapeHtml(value) {
 	return String(value || '')
 		.replace(/&/g, '&amp;')
@@ -209,7 +255,9 @@ function flattenSchedule(scheduleRows, dayIndexMap) {
 					scheduleId: schedule.id,
 					programName: program?.name || 'Program',
 					dayLabel: programWorkout.day_label || '',
+					workoutId: workout?.id,
 					workoutName: workout?.name || 'Workout',
+					workoutCategory: normalizeCategory(workout?.category),
 					workoutNotes: (workout?.notes || '').toString().trim(),
 					workoutExerciseNotes: (workoutExercise?.notes || '').toString().trim(),
 					exerciseId: exercise.id,
@@ -268,6 +316,14 @@ function renderSchedule(items) {
 			const safeExerciseName = escapeHtml(item.exerciseName);
 			const safeNotes = escapeHtml(item.notes || '');
 			const safeWorkoutExerciseNotes = escapeHtml(item.workoutExerciseNotes || '');
+			const workoutColors = getWorkoutColorMeta(
+				item.workoutCategory,
+				item.workoutName,
+				item.workoutId,
+				cleanProgramName(item.programName, 'Program')
+			);
+			const cardStyle = `background-color:${workoutColors.soft}; border:1px solid ${workoutColors.border};`;
+			const bodyStyle = `background-color:${workoutColors.soft};`;
 			const exerciseTitle = item.demoVideoUrl
 				? `<a href="${item.demoVideoUrl}" target="_blank" rel="noopener noreferrer" class="link-primary text-decoration-underline">${safeExerciseName}</a>`
 				: safeExerciseName;
@@ -295,8 +351,8 @@ function renderSchedule(items) {
 			}).join('');
 
 			return `
-				<div class="card border-0 shadow-sm mb-3">
-					<div class="card-body">
+				<div class="card shadow-sm mb-3" style="${cardStyle}">
+					<div class="card-body" style="${bodyStyle}">
 						<div class="d-flex justify-content-between align-items-start gap-2 mb-2">
 							<div>
 								<h5 class="card-title mb-1 fw-semibold fs-4">${exerciseTitle}</h5>
@@ -562,6 +618,7 @@ async function loadScheduleForCurrentDate() {
 					workout:workouts (
 						id,
 						name,
+						category,
 						notes,
 						workout_exercises (
 							order_index,

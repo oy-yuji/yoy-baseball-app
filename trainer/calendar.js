@@ -14,6 +14,73 @@ document.head.appendChild(calendarScript);
 const AUTO_WORKOUT_PROGRAM_PREFIX = '__auto_workout__:';
 const LEGACY_AUTO_WORKOUT_PREFIX = 'quick:';
 
+const WORKOUT_COLOR_PALETTE = {
+  blue: { solid: '#2563eb', soft: '#dbeafe', border: '#93c5fd', text: '#ffffff' },
+  green: { solid: '#16a34a', soft: '#dcfce7', border: '#86efac', text: '#ffffff' },
+  amber: { solid: '#d97706', soft: '#fef3c7', border: '#fcd34d', text: '#1f2937' },
+  red: { solid: '#dc2626', soft: '#fee2e2', border: '#fecaca', text: '#ffffff' },
+  purple: { solid: '#7c3aed', soft: '#ede9fe', border: '#c4b5fd', text: '#ffffff' },
+  teal: { solid: '#0d9488', soft: '#ccfbf1', border: '#5eead4', text: '#ffffff' },
+  pink: { solid: '#db2777', soft: '#fce7f3', border: '#f9a8d4', text: '#ffffff' },
+  slate: { solid: '#475569', soft: '#e2e8f0', border: '#cbd5e1', text: '#ffffff' }
+};
+
+const CATEGORY_COLOR_KEYS = {
+  warmup: 'amber',
+  upper: 'blue',
+  lower: 'green',
+  pitching: 'purple',
+  hitting: 'red',
+  conditioning: 'teal',
+  hybrid: 'pink',
+  other: 'slate'
+};
+
+const COLOR_KEYS = Object.keys(WORKOUT_COLOR_PALETTE);
+
+function normalizeCategory(category) {
+  if (!category) return 'other';
+  return String(category).toLowerCase();
+}
+
+function hashToIndex(value, modulo) {
+  const str = String(value || '');
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % modulo;
+}
+
+function resolveColorKey(category, seed) {
+  const seedValue = String(seed || '').trim();
+  if (seedValue) return COLOR_KEYS[hashToIndex(seedValue, COLOR_KEYS.length)];
+  const normalized = normalizeCategory(category);
+  return CATEGORY_COLOR_KEYS[normalized] || 'slate';
+}
+
+function getWorkoutColorMeta(workout, fallbackName) {
+  const category = workout?.category;
+  const seed = workout?.name || fallbackName || workout?.id || category || '';
+  const key = resolveColorKey(category, seed);
+  return WORKOUT_COLOR_PALETTE[key] || WORKOUT_COLOR_PALETTE.slate;
+}
+
+function getWorkoutItemForDay(workoutItems, dayIndex) {
+  const safeIndex = Number.isInteger(dayIndex) ? dayIndex : 0;
+  if (!Array.isArray(workoutItems) || workoutItems.length === 0) return null;
+  return workoutItems[safeIndex] || workoutItems[0] || null;
+}
+
+function buildEventColors(workoutItem, fallbackName) {
+  const meta = getWorkoutColorMeta(workoutItem?.workout || workoutItem, fallbackName);
+  return {
+    backgroundColor: meta.solid,
+    borderColor: meta.border,
+    textColor: meta.text
+  };
+}
+
 function getNotifyHost() {
   let host = document.getElementById('pageNotifyHost');
   if (host) return host;
@@ -252,7 +319,7 @@ async function loadProgramSummary(programId, fallbackName) {
   }
   const { data, error } = await window.sb
     .from('programs')
-    .select('id, name, program_workouts (order_index, day_label, workout:workouts (id, name))')
+    .select('id, name, program_workouts (order_index, day_label, workout:workouts (id, name, category))')
     .eq('id', programId)
     .single();
 
@@ -561,7 +628,7 @@ calendarScript.onload = async function() {
   if (programIdsForSchedule.length) {
     const { data } = await window.sb
       .from('programs')
-      .select('id, name, program_workouts (order_index, day_label, workout:workouts (id, name))')
+      .select('id, name, program_workouts (order_index, day_label, workout:workouts (id, name, category))')
       .in('id', programIdsForSchedule);
     programDetails = data || [];
   }
@@ -578,6 +645,8 @@ calendarScript.onload = async function() {
     const workoutItems = programWorkoutsMap.get(s.program_id) || [];
     const dayIndex = dayIndexMap.get(String(s.id));
     const isAuto = isAutoWorkoutProgramName(s.programs?.name || '');
+    const dayWorkout = getWorkoutItemForDay(workoutItems, dayIndex);
+    const colors = buildEventColors(dayWorkout, programName);
     return {
       id: s.id,
       title: buildProgramEventTitle(programName, workoutItems, dayIndex, isAuto),
@@ -587,7 +656,10 @@ calendarScript.onload = async function() {
         scheduleId: s.id,
         dayIndex: dayIndex
       },
-      allDay: true
+      allDay: true,
+      backgroundColor: colors.backgroundColor,
+      borderColor: colors.borderColor,
+      textColor: colors.textColor
     };
   });
 
@@ -666,6 +738,7 @@ calendarScript.onload = async function() {
       workoutItems.forEach((item, idx) => {
         const eventDate = addDaysToIsoDate(dateStr, idx);
         const scheduleId = insertedByDate.get(eventDate);
+        const colors = buildEventColors(item, summary.name);
         calendar.addEvent({
           id: scheduleId || undefined,
           title: buildProgramEventTitle(summary.name, workoutItems, idx, summary.isAuto),
@@ -675,7 +748,10 @@ calendarScript.onload = async function() {
             programId: programId,
             scheduleId: scheduleId,
             dayIndex: idx
-          }
+          },
+          backgroundColor: colors.backgroundColor,
+          borderColor: colors.borderColor,
+          textColor: colors.textColor
         });
       });
     }
