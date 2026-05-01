@@ -90,6 +90,10 @@ const CATEGORY_COLOR_KEYS = {
 
 const COLOR_KEYS = Object.keys(WORKOUT_COLOR_PALETTE);
 
+function isDarkThemeActive() {
+	return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+
 function hashToIndex(value, modulo) {
 	const str = String(value || '');
 	let hash = 0;
@@ -109,7 +113,18 @@ function resolveColorKey(category, seed) {
 function getWorkoutColorMeta(workoutCategory, workoutName, workoutId, fallbackName) {
 	const seed = workoutName || fallbackName || workoutId || workoutCategory || '';
 	const key = resolveColorKey(workoutCategory, seed);
-	return WORKOUT_COLOR_PALETTE[key] || WORKOUT_COLOR_PALETTE.slate;
+	const palette = WORKOUT_COLOR_PALETTE[key] || WORKOUT_COLOR_PALETTE.slate;
+
+	if (!isDarkThemeActive()) {
+		return palette;
+	}
+
+	return {
+		...palette,
+		soft: `${palette.solid}1f`,
+		border: `${palette.solid}66`,
+		text: '#e2e8f0'
+	};
 }
 
 function escapeHtml(value) {
