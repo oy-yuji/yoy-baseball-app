@@ -110,9 +110,13 @@ function resolveColorKey(category, seed) {
 	return CATEGORY_COLOR_KEYS[normalized] || 'slate';
 }
 
-function getWorkoutColorMeta(workoutCategory, workoutName, workoutId, fallbackName) {
+function getWorkoutColorKey(workoutCategory, workoutName, workoutId, fallbackName) {
 	const seed = workoutName || fallbackName || workoutId || workoutCategory || '';
-	const key = resolveColorKey(workoutCategory, seed);
+	return resolveColorKey(workoutCategory, seed);
+}
+
+function getWorkoutColorMeta(workoutCategory, workoutName, workoutId, fallbackName) {
+	const key = getWorkoutColorKey(workoutCategory, workoutName, workoutId, fallbackName);
 	const palette = WORKOUT_COLOR_PALETTE[key] || WORKOUT_COLOR_PALETTE.slate;
 
 	if (!isDarkThemeActive()) {
@@ -300,6 +304,131 @@ function buildGroupedMap(items) {
 	return grouped;
 }
 
+function buildGroupHeaderText(groupItems) {
+	const workoutNames = Array.from(new Set(
+		(groupItems || [])
+			.map(item => (item?.workoutName || '').toString().trim())
+			.filter(Boolean)
+	));
+	if (!workoutNames.length) workoutNames.push('Workout');
+
+	const dayLabels = Array.from(new Set(
+		(groupItems || [])
+			.map(item => (item?.dayLabel || '').toString().trim())
+			.filter(Boolean)
+	));
+
+	const workoutLabel = workoutNames.length === 1 ? workoutNames[0] : `${workoutNames.length} workouts`;
+	const dayLabel = dayLabels.length === 1 ? dayLabels[0] : '';
+	const base = [dayLabel, workoutLabel].filter(Boolean).join(' - ') || 'Workout';
+	const exerciseCount = (groupItems || []).length;
+	return `${base} (${exerciseCount} exercise${exerciseCount === 1 ? '' : 's'})`;
+}
+
+function renderExerciseCard(item, index, workoutColors) {
+	const safeKey = `${index}`;
+	const prescribedSets = item.prescribedSets ?? '-';
+	const prescribedReps = item.prescribedReps ?? '-';
+	const prescribedRest = item.prescribedRest ?? '-';
+	const safeExerciseName = escapeHtml(item.exerciseName);
+	const safeNotes = escapeHtml(item.notes || '');
+	const safeWorkoutExerciseNotes = escapeHtml(item.workoutExerciseNotes || '');
+	const resolvedColors = workoutColors || getWorkoutColorMeta(
+		item.workoutCategory,
+		item.workoutName,
+		item.workoutId,
+		cleanProgramName(item.programName, 'Program')
+	);
+	const cardStyle = `background-color:${resolvedColors.soft}; border:1px solid ${resolvedColors.border};`;
+	const bodyStyle = `background-color:${resolvedColors.soft};`;
+	const exerciseTitle = item.demoVideoUrl
+		? `<a href="${item.demoVideoUrl}" target="_blank" rel="noopener noreferrer" class="link-primary text-decoration-underline">${safeExerciseName}</a>`
+		: safeExerciseName;
+	const exerciseNameLower = (item.exerciseName || '').toLowerCase();
+	const isRunningRelated = /run|sprint|jog|shuttle|tempo|distance|mile|lap/.test(exerciseNameLower);
+	const allowWeightInput = !isRunningRelated;
+	const setCount = Number.parseInt(item.prescribedSets, 10);
+	const renderCount = Number.isFinite(setCount) && setCount > 0 ? setCount : 1;
+	const setRows = Array.from({ length: renderCount }, (_, rowIndex) => {
+		const setNo = rowIndex + 1;
+		return `
+			<tr>
+				<td class="fw-semibold">Set ${setNo}</td>
+				<td>
+					<input id="reps-${safeKey}-${setNo}" class="form-control form-control-lg" type="text" />
+				</td>
+				${allowWeightInput
+					? `<td><input id="weight-${safeKey}-${setNo}" class="form-control form-control-lg" type="number" min="0" step="0.5" /></td>`
+					: ''}
+				<td>
+					<input id="rest-${safeKey}-${setNo}" class="form-control form-control-lg" type="number" min="0" step="1" />
+				</td>
+			</tr>
+		`;
+	}).join('');
+
+	return `
+		<div class="card shadow-sm mb-3" style="${cardStyle}">
+			<div class="card-body" style="${bodyStyle}">
+				<div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+					<div>
+						<h5 class="card-title mb-1 fw-semibold fs-4">${exerciseTitle}</h5>
+						${item.demoVideoUrl ? '<div class="small mt-1"><span class="badge rounded-pill text-bg-info">Video available</span></div>' : ''}
+					</div>
+					<span class="badge text-bg-light">${titleCategory(item.category)}</span>
+				</div>
+
+				<div class="fs-5 mb-3 text-secondary">
+					<strong>Assigned:</strong> ${prescribedSets} sets • ${prescribedReps} reps • ${prescribedRest}s rest
+				</div>
+
+				<div class="small mb-3">
+					<strong>Notes:</strong>
+					<div class="mt-1 p-2 rounded border ${safeNotes ? '' : 'text-muted'}">${safeNotes || 'No notes provided for this exercise.'}</div>
+				</div>
+
+				${safeWorkoutExerciseNotes ? `
+					<div class="small mb-3">
+						<strong>Workout Notes:</strong>
+						<div class="mt-1 p-2 rounded border">${safeWorkoutExerciseNotes}</div>
+					</div>
+				` : ''}
+
+				<div class="table-responsive">
+					<table class="table table-sm align-middle mb-0 table-hover fs-6">
+						<thead>
+							<tr>
+								<th>Set</th>
+								<th>Reps done</th>
+								${allowWeightInput ? '<th>Weight (lbs)</th>' : ''}
+								<th>Rest (sec)</th>
+							</tr>
+						</thead>
+						<tbody>
+							${setRows}
+						</tbody>
+					</table>
+				</div>
+
+				<div class="mt-3">
+					<button
+						class="btn btn-primary save-log-btn px-3"
+						type="button"
+						data-schedule-id="${item.scheduleId}"
+						data-exercise-id="${item.exerciseId}"
+						data-input-prefix="${safeKey}"
+						data-set-count="${renderCount}"
+						disabled
+					>
+						Save completed sets
+					</button>
+					<div id="save-status-${safeKey}" class="small mt-2 text-muted"></div>
+				</div>
+			</div>
+		</div>
+	`;
+}
+
 function renderSchedule(items) {
 	const container = document.getElementById('scheduleContent');
 	if (!container) return;
@@ -322,111 +451,47 @@ function renderSchedule(items) {
 		<div class="text-center fw-semibold fs-4 mb-4">${headerLine}</div>
 	`;
 
-	container.innerHTML = headerHtml + items
-		.map((item, index) => {
-			const safeKey = `${index}`;
-			const prescribedSets = item.prescribedSets ?? '-';
-			const prescribedReps = item.prescribedReps ?? '-';
-			const prescribedRest = item.prescribedRest ?? '-';
-			const safeExerciseName = escapeHtml(item.exerciseName);
-			const safeNotes = escapeHtml(item.notes || '');
-			const safeWorkoutExerciseNotes = escapeHtml(item.workoutExerciseNotes || '');
-			const workoutColors = getWorkoutColorMeta(
-				item.workoutCategory,
-				item.workoutName,
-				item.workoutId,
-				cleanProgramName(item.programName, 'Program')
+	const itemsWithIndex = items.map((item, index) => ({ ...item, __index: index }));
+	const groups = new Map();
+	for (const item of itemsWithIndex) {
+		const colorKey = getWorkoutColorKey(
+			item.workoutCategory,
+			item.workoutName,
+			item.workoutId,
+			cleanProgramName(item.programName, 'Program')
+		);
+		if (!groups.has(colorKey)) groups.set(colorKey, []);
+		groups.get(colorKey).push(item);
+	}
+
+	const groupList = Array.from(groups.values());
+	const openSingleGroup = groupList.length === 1;
+	const groupsHtml = groupList
+		.map((groupItems) => {
+			const firstItem = groupItems[0];
+			const groupColors = getWorkoutColorMeta(
+				firstItem.workoutCategory,
+				firstItem.workoutName,
+				firstItem.workoutId,
+				cleanProgramName(firstItem.programName, 'Program')
 			);
-			const cardStyle = `background-color:${workoutColors.soft}; border:1px solid ${workoutColors.border};`;
-			const bodyStyle = `background-color:${workoutColors.soft};`;
-			const exerciseTitle = item.demoVideoUrl
-				? `<a href="${item.demoVideoUrl}" target="_blank" rel="noopener noreferrer" class="link-primary text-decoration-underline">${safeExerciseName}</a>`
-				: safeExerciseName;
-			const exerciseNameLower = (item.exerciseName || '').toLowerCase();
-			const isRunningRelated = /run|sprint|jog|shuttle|tempo|distance|mile|lap/.test(exerciseNameLower);
-			const allowWeightInput = !isRunningRelated;
-			const setCount = Number.parseInt(item.prescribedSets, 10);
-			const renderCount = Number.isFinite(setCount) && setCount > 0 ? setCount : 1;
-			const setRows = Array.from({ length: renderCount }, (_, rowIndex) => {
-				const setNo = rowIndex + 1;
-				return `
-					<tr>
-						<td class="fw-semibold">Set ${setNo}</td>
-						<td>
-							<input id="reps-${safeKey}-${setNo}" class="form-control form-control-lg" type="text" />
-						</td>
-						${allowWeightInput
-							? `<td><input id="weight-${safeKey}-${setNo}" class="form-control form-control-lg" type="number" min="0" step="0.5" /></td>`
-							: ''}
-						<td>
-							<input id="rest-${safeKey}-${setNo}" class="form-control form-control-lg" type="number" min="0" step="1" />
-						</td>
-					</tr>
-				`;
-			}).join('');
+			const headerText = escapeHtml(buildGroupHeaderText(groupItems));
+			const summaryStyle = `background-color:${groupColors.solid}; color:${groupColors.text}; border:1px solid ${groupColors.border}; cursor:pointer;`;
 
 			return `
-				<div class="card shadow-sm mb-3" style="${cardStyle}">
-					<div class="card-body" style="${bodyStyle}">
-						<div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-							<div>
-								<h5 class="card-title mb-1 fw-semibold fs-4">${exerciseTitle}</h5>
-								${item.demoVideoUrl ? '<div class="small mt-1"><span class="badge rounded-pill text-bg-info">Video available</span></div>' : ''}
-							</div>
-							<span class="badge text-bg-light">${titleCategory(item.category)}</span>
-						</div>
-
-						<div class="fs-5 mb-3 text-secondary">
-							<strong>Assigned:</strong> ${prescribedSets} sets • ${prescribedReps} reps • ${prescribedRest}s rest
-						</div>
-
-						<div class="small mb-3">
-							<strong>Notes:</strong>
-							<div class="mt-1 p-2 rounded border ${safeNotes ? '' : 'text-muted'}">${safeNotes || 'No notes provided for this exercise.'}</div>
-						</div>
-
-						${safeWorkoutExerciseNotes ? `
-							<div class="small mb-3">
-								<strong>Workout Notes:</strong>
-								<div class="mt-1 p-2 rounded border">${safeWorkoutExerciseNotes}</div>
-							</div>
-						` : ''}
-
-						<div class="table-responsive">
-							<table class="table table-sm align-middle mb-0 table-hover fs-6">
-								<thead>
-									<tr>
-										<th>Set</th>
-										<th>Reps done</th>
-										${allowWeightInput ? '<th>Weight (lbs)</th>' : ''}
-										<th>Rest (sec)</th>
-									</tr>
-								</thead>
-								<tbody>
-									${setRows}
-								</tbody>
-							</table>
-						</div>
-
-						<div class="mt-3">
-							<button
-								class="btn btn-primary save-log-btn px-3"
-								type="button"
-								data-schedule-id="${item.scheduleId}"
-								data-exercise-id="${item.exerciseId}"
-								data-input-prefix="${safeKey}"
-								data-set-count="${renderCount}"
-								disabled
-							>
-								Save completed sets
-							</button>
-							<div id="save-status-${safeKey}" class="small mt-2 text-muted"></div>
-						</div>
+				<details class="mb-3"${openSingleGroup ? ' open' : ''}>
+					<summary class="fw-semibold px-3 py-2 rounded-3" style="${summaryStyle}">
+						${headerText}
+					</summary>
+					<div class="mt-3">
+						${groupItems.map(item => renderExerciseCard(item, item.__index, groupColors)).join('')}
 					</div>
-				</div>
+				</details>
 			`;
 		})
 		.join('');
+
+	container.innerHTML = headerHtml + groupsHtml;
 }
 
 function updateButtonEnabledState(button) {
